@@ -7,47 +7,39 @@ const portals: Array<{
   role: LoginRole;
   title: string;
   description: string;
-  bullets: string[];
   ctaLabel: string;
+  signupLabel: string;
+  shortTag: string;
   accent: "indigo" | "emerald" | "amber";
 }> = [
   {
     role: "quality-international",
     title: "Quality International",
     description:
-      "Platform super admins manage all tenants, training programmes, finance, and compliance trends.",
-    bullets: [
-      "Approve organization & individual signups",
-      "Curate training catalog and schedules",
-      "Track invoices, revenue and payouts",
-    ],
+      "Super admins manage organizations, programmes, finance, and approvals.",
     ctaLabel: "Login as Quality International",
+    signupLabel: "Request access",
+    shortTag: "QI",
     accent: "indigo",
   },
   {
     role: "organization",
     title: "Organization",
     description:
-      "Tenant admins onboard employees, plan training, and monitor competency status across the workforce.",
-    bullets: [
-      "Manage employee directory and roles",
-      "Plan and request training programmes",
-      "Track attendance, scores and certificates",
-    ],
+      "Tenant admins onboard employees and run training plans with compliance tracking.",
     ctaLabel: "Login as Organization",
+    signupLabel: "Create organization",
+    shortTag: "ORG",
     accent: "emerald",
   },
   {
     role: "individual",
     title: "Individual Learner",
     description:
-      "Independent learners enroll in programmes, attempt evaluations, and receive verifiable certificates.",
-    bullets: [
-      "Browse and enroll in upcoming sessions",
-      "Attempt assessments and view scores",
-      "Download QR-verifiable certificates",
-    ],
+      "Learners attend sessions, attempt assessments, and download certificates.",
     ctaLabel: "Login as Individual",
+    signupLabel: "Create learner account",
+    shortTag: "IND",
     accent: "amber",
   },
 ];
@@ -72,7 +64,7 @@ const accentButton: Record<"indigo" | "emerald" | "amber", string> = {
 
 export default function Home() {
   return (
-    <div className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
+    <div className="relative h-screen overflow-hidden bg-slate-950 text-slate-100">
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0"
@@ -82,243 +74,77 @@ export default function Home() {
         }}
       />
 
-      <header className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-6">
-        <BrandLockup variant="light" />
-        <nav className="hidden items-center gap-6 text-xs font-medium text-slate-300 md:flex">
-          <a href="#portals" className="hover:text-white">
-            Portals
-          </a>
-          <a href="#features" className="hover:text-white">
-            Features
-          </a>
-          <a href="#compliance" className="hover:text-white">
-            Compliance
-          </a>
+      <div className="relative z-10 mx-auto flex h-full w-full max-w-6xl flex-col px-6 py-4 md:py-6">
+        <header className="flex items-center justify-between">
+          <BrandLockup variant="light" />
           <Link
             href="/login/quality-international"
-            className="rounded-lg border border-white/20 px-3 py-1.5 text-white hover:bg-white/10"
+            className="rounded-lg border border-white/20 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/10"
           >
             Sign in
           </Link>
-        </nav>
-      </header>
+        </header>
 
-      <section className="relative z-10 mx-auto w-full max-w-6xl px-6 pb-12 pt-6 sm:pt-10">
-        <div className="grid items-center gap-10 lg:grid-cols-[1.1fr_1fr]">
-          <div>
-            <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-300">
+        <main className="mt-5 grid min-h-0 flex-1 grid-rows-[auto_1fr_auto] gap-4 md:gap-5">
+          <section>
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-300">
               Multi-Tenant SaaS · ISO Audit Ready
             </span>
-            <h1 className="mt-5 text-4xl font-bold leading-tight tracking-tight sm:text-5xl">
-              The Training & Compliance OS for{" "}
-              <span className="bg-gradient-to-r from-indigo-300 via-emerald-300 to-amber-300 bg-clip-text text-transparent">
-                modern organizations
-              </span>
+            <h1 className="mt-3 text-2xl font-bold leading-tight tracking-tight sm:text-3xl lg:text-4xl">
+              Training & Compliance OS for modern organizations
             </h1>
-            <p className="mt-5 max-w-xl text-base leading-7 text-slate-300">
-              Quality International is a single platform to plan trainings,
-              run live sessions, evaluate learners, and issue verifiable
-              certificates — with strict tenant isolation and immutable audit
-              trails for ISO 17025 / 21 CFR Part 11 readiness.
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
+              Role-aware portals for Quality International, Organization Admins,
+              and Individual Learners.
             </p>
+          </section>
 
-            <div className="mt-8 flex flex-wrap items-center gap-3">
-              <a
-                href="#portals"
-                className="rounded-xl bg-white px-5 py-3 text-sm font-semibold text-slate-900 shadow-lg shadow-slate-950/40 transition hover:bg-slate-200"
-              >
-                Choose your portal
-              </a>
-              <Link
-                href="/login/organization?mode=signup"
-                className="rounded-xl border border-white/20 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
-              >
-                Create organization account
-              </Link>
-            </div>
-
-            <dl className="mt-10 grid grid-cols-3 gap-4">
-              {[
-                { k: "Tenants onboarded", v: "120+" },
-                { k: "Trainings delivered", v: "2,400+" },
-                { k: "Certificates issued", v: "18,000+" },
-              ].map((stat) => (
-                <div
-                  key={stat.k}
-                  className="rounded-2xl border border-white/10 bg-white/5 p-4"
+          <section className="min-h-0">
+            <div className="grid h-full min-h-0 gap-3 md:grid-cols-3">
+              {portals.map((portal) => (
+                <article
+                  key={portal.role}
+                  className={`flex min-h-0 flex-col rounded-2xl bg-white p-4 text-slate-900 shadow-xl shadow-slate-950/20 ring-1 ${accentRing[portal.accent]}`}
                 >
-                  <dt className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                    {stat.k}
-                  </dt>
-                  <dd className="mt-1 text-2xl font-bold text-white">{stat.v}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-
-          <div className="relative">
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl shadow-slate-950/40 backdrop-blur">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-300">
-                Live across roles
-              </p>
-              <h2 className="mt-2 text-xl font-semibold text-white">
-                One platform, role-aware experiences
-              </h2>
-              <ul className="mt-5 space-y-3 text-sm text-slate-200">
-                <li className="flex items-start gap-3">
-                  <span className="mt-1 h-2 w-2 rounded-full bg-indigo-400" />
-                  Super Admin orchestrates organizations, programmes & finance
-                </li>
-                <li className="flex items-start gap-3">
-                  <span className="mt-1 h-2 w-2 rounded-full bg-emerald-400" />
-                  Tenant Admin manages employees, training plan & compliance
-                </li>
-                <li className="flex items-start gap-3">
-                  <span className="mt-1 h-2 w-2 rounded-full bg-amber-300" />
-                  Learner attends sessions, attempts evaluations, downloads
-                  certificates
-                </li>
-              </ul>
-              <div className="mt-6 grid grid-cols-3 gap-2 text-center">
-                {portals.map((portal) => (
-                  <Link
-                    key={portal.role}
-                    href={roleConfigMap[portal.role].loginPath}
-                    className={`rounded-xl border border-white/10 bg-white/5 px-2 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-white/10 ring-1 ${accentBadge[portal.accent]}`}
-                  >
-                    {portal.title.split(" ")[0]}
-                  </Link>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section
-        id="portals"
-        className="relative z-10 mx-auto w-full max-w-6xl px-6 pb-20"
-      >
-        <div className="mb-8 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
-              Choose your portal
-            </p>
-            <h2 className="mt-2 text-2xl font-semibold text-white sm:text-3xl">
-              Sign in to the experience built for your role
-            </h2>
-          </div>
-          <p className="max-w-md text-sm text-slate-300">
-            Strict role-aware access. Each portal enforces its own permissions,
-            module visibility, and audit context.
-          </p>
-        </div>
-
-        <div className="grid gap-5 md:grid-cols-3">
-          {portals.map((portal) => (
-            <article
-              key={portal.role}
-              className={`group flex h-full flex-col rounded-3xl bg-white p-6 text-slate-900 shadow-xl shadow-slate-950/30 ring-1 transition ${accentRing[portal.accent]}`}
-            >
-              <div className="flex items-center justify-between">
-                <span
-                  className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] ring-1 ${accentBadge[portal.accent]}`}
-                >
-                  {portal.title}
-                </span>
-                <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                  Portal
-                </span>
-              </div>
-              <h3 className="mt-4 text-xl font-semibold">{portal.title} Login</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                {portal.description}
-              </p>
-              <ul className="mt-4 space-y-2 text-sm text-slate-700">
-                {portal.bullets.map((bullet) => (
-                  <li key={bullet} className="flex items-start gap-2">
+                  <div className="flex items-center justify-between">
                     <span
-                      className={`mt-1.5 h-1.5 w-1.5 rounded-full ${
-                        portal.accent === "indigo"
-                          ? "bg-indigo-500"
-                          : portal.accent === "emerald"
-                            ? "bg-emerald-500"
-                            : "bg-amber-500"
-                      }`}
-                    />
-                    {bullet}
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-auto flex flex-col gap-2 pt-6">
-                <Link
-                  href={roleConfigMap[portal.role].loginPath}
-                  className={`inline-flex w-full items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition ${accentButton[portal.accent]}`}
-                >
-                  {portal.ctaLabel}
-                </Link>
-                <Link
-                  href={`${roleConfigMap[portal.role].loginPath}?mode=signup`}
-                  className="inline-flex w-full items-center justify-center rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  Create account
-                </Link>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section
-        id="features"
-        className="relative z-10 mx-auto w-full max-w-6xl px-6 pb-20"
-      >
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            {
-              title: "Multi-Tenant Isolation",
-              copy: "Postgres RLS + JWT org claims keep tenant data isolated by design.",
-            },
-            {
-              title: "Live Training Delivery",
-              copy: "Scheduling and attendance evidence integrated with Zoom OAuth.",
-            },
-            {
-              title: "Assessment Engine",
-              copy: "Structured AI-generated quizzes with deterministic grading storage.",
-            },
-            {
-              title: "Verifiable Certificates",
-              copy: "Issue immutable certificates with public QR verification endpoints.",
-            },
-          ].map((feature) => (
-            <div
-              key={feature.title}
-              className="rounded-2xl border border-white/10 bg-white/5 p-5"
-            >
-              <p className="text-sm font-semibold text-white">{feature.title}</p>
-              <p className="mt-2 text-xs leading-5 text-slate-300">
-                {feature.copy}
-              </p>
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] ring-1 ${accentBadge[portal.accent]}`}
+                    >
+                      {portal.shortTag}
+                    </span>
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400">
+                      Portal
+                    </span>
+                  </div>
+                  <h2 className="mt-2 text-base font-semibold">{portal.title}</h2>
+                  <p className="mt-1 line-clamp-3 text-xs leading-5 text-slate-600">
+                    {portal.description}
+                  </p>
+                  <div className="mt-auto flex flex-col gap-2 pt-3">
+                    <Link
+                      href={roleConfigMap[portal.role].loginPath}
+                      className={`inline-flex w-full items-center justify-center rounded-lg px-3 py-2 text-xs font-semibold text-white transition ${accentButton[portal.accent]}`}
+                    >
+                      {portal.ctaLabel}
+                    </Link>
+                    <Link
+                      href={`${roleConfigMap[portal.role].loginPath}?mode=signup`}
+                      className="inline-flex w-full items-center justify-center rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      {portal.signupLabel}
+                    </Link>
+                  </div>
+                </article>
+              ))}
             </div>
-          ))}
-        </div>
-      </section>
+          </section>
 
-      <footer
-        id="compliance"
-        className="relative z-10 border-t border-white/10 bg-slate-950/60"
-      >
-        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-3 px-6 py-6 text-xs text-slate-400">
-          <p>
-            © {new Date().getFullYear()} Quality International · Audit-ready
-            training platform
-          </p>
-          <p className="text-slate-500">
-            ISO 17025 · 21 CFR Part 11 · GDPR-aware
-          </p>
-        </div>
-      </footer>
+          <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-3 text-[11px] text-slate-400">
+            <p>© {new Date().getFullYear()} Quality International</p>
+            <p className="text-slate-500">ISO 17025 · 21 CFR Part 11</p>
+          </footer>
+        </main>
+      </div>
     </div>
   );
 }
