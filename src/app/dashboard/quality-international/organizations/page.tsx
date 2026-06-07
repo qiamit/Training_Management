@@ -1,7 +1,11 @@
 import { DashboardShell } from "@/components/dashboard-shell";
 import { appRoleLabel, roleConfigMap } from "@/lib/auth/roles";
 import { requireAuthorizedUser } from "@/lib/auth/session";
-import { createAdminClient } from "@/utils/supabase/admin";
+import { getAppRole } from "@/lib/firebase/auth-user";
+import {
+  countUsersByOrgIds,
+  listOrganizations,
+} from "@/lib/firebase/db";
 
 const config = roleConfigMap["quality-international"];
 
@@ -18,42 +22,20 @@ async function loadOrganizations(): Promise<{
   error?: string;
 }> {
   try {
-    const admin = createAdminClient();
-    const { data: organizations, error } = await admin
-      .from("organizations")
-      .select("id,name,iso_accreditations,created_at")
-      .order("name", { ascending: true });
-
-    if (error) {
-      return { rows: [], error: error.message };
-    }
-
-    const orgIds = (organizations ?? []).map((o) => o.id as string);
-    let countsByOrg: Record<string, number> = {};
-
-    if (orgIds.length > 0) {
-      const { data: members } = await admin
-        .from("users")
-        .select("org_id")
-        .in("org_id", orgIds);
-      countsByOrg = (members ?? []).reduce<Record<string, number>>(
-        (acc, row) => {
-          const key = String(row.org_id ?? "");
-          if (!key) return acc;
-          acc[key] = (acc[key] ?? 0) + 1;
-          return acc;
-        },
-        {},
-      );
-    }
+    const organizations = await listOrganizations();
+    const orgIds = organizations.map((o) => o.id);
+    const countsByOrg = await countUsersByOrgIds(orgIds);
 
     return {
-      rows: (organizations ?? []).map((o) => ({
-        id: o.id as string,
-        name: o.name as string,
-        iso_accreditations: (o.iso_accreditations as string[] | null) ?? [],
-        created_at: (o.created_at as string | null) ?? null,
-        employeeCount: countsByOrg[o.id as string] ?? 0,
+      rows: organizations.map((o) => ({
+        id: o.id,
+        name: o.name,
+        iso_accreditations: o.iso_accreditations ?? [],
+        created_at:
+          o.created_at && typeof o.created_at !== "string"
+            ? o.created_at.toDate?.().toISOString() ?? null
+            : (o.created_at as string | null) ?? null,
+        employeeCount: countsByOrg[o.id] ?? 0,
       })),
     };
   } catch (caughtError) {
@@ -80,7 +62,7 @@ export default async function OrganizationsModulePage() {
       portalLabel="Quality International"
       portalAccent={config.accent}
       userEmail={user.email ?? ""}
-      userRoleLabel={appRoleLabel(String(user.app_metadata?.role ?? ""))}
+      userRoleLabel={appRoleLabel(getAppRole(user))}
       navItems={config.navItems}
       activeHref="/dashboard/quality-international/organizations"
     >
@@ -95,11 +77,9 @@ export default async function OrganizationsModulePage() {
               All organization tenants registered on the platform.
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-100">
-              {rows.length} tenants
-            </span>
-          </div>
+          <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-100">
+            {rows.length} tenants
+          </span>
         </div>
       </section>
 

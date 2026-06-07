@@ -1,7 +1,9 @@
 import { DashboardShell } from "@/components/dashboard-shell";
 import { appRoleLabel, roleConfigMap } from "@/lib/auth/roles";
 import { requireAuthorizedUser } from "@/lib/auth/session";
-import { createAdminClient } from "@/utils/supabase/admin";
+import { claimsFromUser, getAppRole } from "@/lib/firebase/auth-user";
+import { listAuthUsers } from "@/lib/firebase/auth-server";
+import { getSignupMeta } from "@/lib/firebase/db";
 import { approveUser, rejectUser } from "./actions";
 
 const config = roleConfigMap["quality-international"];
@@ -34,32 +36,29 @@ export default async function UserApprovalsPage() {
   let loadError = "";
 
   try {
-    const admin = createAdminClient();
-    const { data, error } = await admin.auth.admin.listUsers({
-      page: 1,
-      perPage: 200,
+    const authUsers = await listAuthUsers(200);
+    const pending = authUsers.filter((user) => {
+      const claims = claimsFromUser(user);
+      const hasRole = Boolean(claims?.role);
+      const approvalStatus = String(claims?.approval_status ?? "");
+      return !hasRole && approvalStatus !== "rejected";
     });
 
-    if (error) {
-      loadError = error.message;
-    } else {
-      pendingUsers = (data.users ?? [])
-        .filter((user) => {
-          const hasRole = Boolean(user.app_metadata?.role);
-          const approvalStatus = String(user.app_metadata?.approval_status ?? "");
-          return !hasRole && approvalStatus !== "rejected";
-        })
-        .map((user) => ({
-          id: user.id,
+    pendingUsers = await Promise.all(
+      pending.map(async (user) => {
+        const meta = await getSignupMeta(user.uid);
+        return {
+          id: user.uid,
           email: user.email,
-          requestedPortal: String(user.user_metadata?.requested_portal ?? ""),
-          fullName: String(user.user_metadata?.full_name ?? ""),
-          organizationName: String(user.user_metadata?.organization_name ?? ""),
-          designation: String(user.user_metadata?.designation ?? ""),
-          mobile: String(user.user_metadata?.mobile ?? ""),
-          createdAt: user.created_at,
-        }));
-    }
+          requestedPortal: meta?.requested_portal ?? "",
+          fullName: meta?.full_name ?? user.displayName ?? "",
+          organizationName: meta?.organization_name ?? "",
+          designation: meta?.designation ?? "",
+          mobile: meta?.mobile ?? "",
+          createdAt: user.metadata.creationTime,
+        };
+      }),
+    );
   } catch (error) {
     loadError =
       error instanceof Error ? error.message : "Unable to load pending users.";
@@ -70,7 +69,7 @@ export default async function UserApprovalsPage() {
       portalLabel="Quality International"
       portalAccent={config.accent}
       userEmail={currentUser.email ?? ""}
-      userRoleLabel={appRoleLabel(String(currentUser.app_metadata?.role ?? ""))}
+      userRoleLabel={appRoleLabel(getAppRole(currentUser))}
       navItems={config.navItems}
       activeHref="/dashboard/quality-international/user-approvals"
     >

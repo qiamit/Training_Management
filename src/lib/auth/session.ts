@@ -1,6 +1,11 @@
 import { redirect } from "next/navigation";
 
-import { createClient } from "@/utils/supabase/server";
+import {
+  clearSessionCookie,
+  getCurrentUser,
+  signOutCurrentUser,
+} from "@/lib/firebase/auth-server";
+import { getAppRole } from "@/lib/firebase/auth-user";
 
 export async function requireAuthorizedUser({
   allowedAppRoles,
@@ -9,20 +14,19 @@ export async function requireAuthorizedUser({
   allowedAppRoles: string[];
   loginPath: string;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
 
   if (!user) {
     redirect(loginPath);
   }
 
-  const appRole = String(user.app_metadata?.role ?? "");
-  if (!allowedAppRoles.includes(appRole)) {
-    await supabase.auth.signOut();
+  const appRole = getAppRole(user);
+  if (!appRole || !allowedAppRoles.includes(appRole)) {
+    await signOutCurrentUser();
     redirect(loginPath);
   }
 
   return user;
 }
+
+export { clearSessionCookie, getCurrentUser };

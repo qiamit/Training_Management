@@ -13,16 +13,6 @@ const portals: Array<{
   accent: "indigo" | "emerald" | "amber";
 }> = [
   {
-    role: "quality-international",
-    title: "Quality International",
-    description:
-      "Super admins manage organizations, programmes, finance, and approvals.",
-    ctaLabel: "Login as Quality International",
-    signupLabel: "Request access",
-    shortTag: "QI",
-    accent: "indigo",
-  },
-  {
     role: "organization",
     title: "Organization",
     description:
@@ -81,7 +71,7 @@ export default function Home() {
             href="/login/quality-international"
             className="rounded-lg border border-white/20 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/10"
           >
-            Sign in
+            QI Login
           </Link>
         </header>
 
@@ -100,7 +90,7 @@ export default function Home() {
           </section>
 
           <section className="min-h-0">
-            <div className="grid h-full min-h-0 gap-3 md:grid-cols-3">
+            <div className="grid h-full min-h-0 gap-3 md:grid-cols-2">
               {portals.map((portal) => (
                 <article
                   key={portal.role}

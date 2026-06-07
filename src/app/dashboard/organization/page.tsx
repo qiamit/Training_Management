@@ -3,35 +3,31 @@ import Link from "next/link";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { appRoleLabel, roleConfigMap } from "@/lib/auth/roles";
 import { requireAuthorizedUser } from "@/lib/auth/session";
-import { createAdminClient } from "@/utils/supabase/admin";
+import { getAppRole } from "@/lib/firebase/auth-user";
+import {
+  getOrganizationById,
+  getUserProfileByAuthId,
+  listUsersByOrgId,
+} from "@/lib/firebase/db";
 
 const config = roleConfigMap.organization;
 
 async function loadOrgSnapshot(authUserId: string) {
   try {
-    const admin = createAdminClient();
-    const { data: profile } = await admin
-      .from("users")
-      .select("org_id, full_name")
-      .eq("auth_user_id", authUserId)
-      .maybeSingle();
-
-    const orgId = profile?.org_id as string | undefined;
+    const profile = await getUserProfileByAuthId(authUserId);
+    const orgId = profile?.org_id;
     if (!orgId) {
       return { orgName: "Your Organization", employeeCount: 0 };
     }
 
-    const [{ data: org }, employeesRes] = await Promise.all([
-      admin.from("organizations").select("name").eq("id", orgId).maybeSingle(),
-      admin
-        .from("users")
-        .select("id", { count: "exact", head: true })
-        .eq("org_id", orgId),
+    const [org, members] = await Promise.all([
+      getOrganizationById(orgId),
+      listUsersByOrgId(orgId),
     ]);
 
     return {
       orgName: org?.name ?? "Your Organization",
-      employeeCount: employeesRes.count ?? 0,
+      employeeCount: members.length,
     };
   } catch {
     return { orgName: "Your Organization", employeeCount: 0 };
@@ -51,7 +47,7 @@ export default async function OrganizationDashboardPage() {
       portalLabel="Organization"
       portalAccent={config.accent}
       userEmail={user.email ?? ""}
-      userRoleLabel={appRoleLabel(String(user.app_metadata?.role ?? ""))}
+      userRoleLabel={appRoleLabel(getAppRole(user))}
       navItems={config.navItems}
       activeHref="/dashboard/organization"
     >

@@ -3,7 +3,12 @@ import Link from "next/link";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { appRoleLabel, roleConfigMap } from "@/lib/auth/roles";
 import { requireAuthorizedUser } from "@/lib/auth/session";
-import { createAdminClient } from "@/utils/supabase/admin";
+import { claimsFromUser, getAppRole } from "@/lib/firebase/auth-user";
+import { listAuthUsers } from "@/lib/firebase/auth-server";
+import {
+  countOrganizationsExcluding,
+  countUsersByRoles,
+} from "@/lib/firebase/db";
 
 const config = roleConfigMap["quality-international"];
 
@@ -21,29 +26,22 @@ async function loadCounts(): Promise<Counts> {
   };
 
   try {
-    const admin = createAdminClient();
-
-    const [orgRes, indRes, pendingRes] = await Promise.all([
-      admin
-        .from("organizations")
-        .select("id", { count: "exact", head: true })
-        .neq("name", "Independent Learners"),
-      admin
-        .from("users")
-        .select("id", { count: "exact", head: true })
-        .in("role", ["individual", "employee", "trainee"]),
-      admin.auth.admin.listUsers({ page: 1, perPage: 200 }),
+    const [organizations, individuals, authUsers] = await Promise.all([
+      countOrganizationsExcluding("Independent Learners"),
+      countUsersByRoles(["individual", "employee", "trainee"]),
+      listAuthUsers(200),
     ]);
 
-    const pendingApprovals = (pendingRes.data?.users ?? []).filter((user) => {
-      const hasRole = Boolean(user.app_metadata?.role);
-      const status = String(user.app_metadata?.approval_status ?? "");
+    const pendingApprovals = authUsers.filter((user) => {
+      const claims = claimsFromUser(user);
+      const hasRole = Boolean(claims?.role);
+      const status = String(claims?.approval_status ?? "");
       return !hasRole && status !== "rejected";
     }).length;
 
     return {
-      organizations: orgRes.count ?? 0,
-      individuals: indRes.count ?? 0,
+      organizations,
+      individuals,
       pendingApprovals,
     };
   } catch {
@@ -64,7 +62,7 @@ export default async function QualityInternationalDashboardPage() {
       portalLabel="Quality International"
       portalAccent={config.accent}
       userEmail={user.email ?? ""}
-      userRoleLabel={appRoleLabel(String(user.app_metadata?.role ?? ""))}
+      userRoleLabel={appRoleLabel(getAppRole(user))}
       navItems={config.navItems}
       activeHref="/dashboard/quality-international"
     >

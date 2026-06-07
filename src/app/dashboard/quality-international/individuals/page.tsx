@@ -1,7 +1,8 @@
 import { DashboardShell } from "@/components/dashboard-shell";
 import { appRoleLabel, roleConfigMap } from "@/lib/auth/roles";
 import { requireAuthorizedUser } from "@/lib/auth/session";
-import { createAdminClient } from "@/utils/supabase/admin";
+import { getAppRole } from "@/lib/firebase/auth-user";
+import { listUsersByRoles } from "@/lib/firebase/db";
 
 const config = roleConfigMap["quality-international"];
 
@@ -13,7 +14,6 @@ type IndividualRow = {
   city: string;
   country: string;
   role: string;
-  createdAt?: string | null;
 };
 
 async function loadIndividuals(): Promise<{
@@ -21,33 +21,18 @@ async function loadIndividuals(): Promise<{
   error?: string;
 }> {
   try {
-    const admin = createAdminClient();
-    const { data, error } = await admin.auth.admin.listUsers({
-      page: 1,
-      perPage: 200,
-    });
-
-    if (error) {
-      return { rows: [], error: error.message };
-    }
-
-    const rows = (data.users ?? [])
-      .filter((u) => {
-        const role = String(u.app_metadata?.role ?? "");
-        return role === "individual" || role === "trainee";
-      })
-      .map((u) => ({
-        id: u.id,
-        email: u.email ?? "",
-        fullName: String(u.user_metadata?.full_name ?? ""),
-        mobile: String(u.user_metadata?.mobile ?? ""),
-        city: String(u.user_metadata?.city ?? ""),
-        country: String(u.user_metadata?.country ?? ""),
-        role: String(u.app_metadata?.role ?? ""),
-        createdAt: u.created_at,
-      }));
-
-    return { rows };
+    const profiles = await listUsersByRoles(["individual", "trainee", "employee"]);
+    return {
+      rows: profiles.map((p) => ({
+        id: p.auth_user_id,
+        email: "",
+        fullName: p.full_name ?? "",
+        mobile: p.mobile ?? "",
+        city: p.city ?? "",
+        country: p.country ?? "",
+        role: p.role,
+      })),
+    };
   } catch (caughtError) {
     return {
       rows: [],
@@ -72,7 +57,7 @@ export default async function IndividualsModulePage() {
       portalLabel="Quality International"
       portalAccent={config.accent}
       userEmail={user.email ?? ""}
-      userRoleLabel={appRoleLabel(String(user.app_metadata?.role ?? ""))}
+      userRoleLabel={appRoleLabel(getAppRole(user))}
       navItems={config.navItems}
       activeHref="/dashboard/quality-international/individuals"
     >
@@ -112,13 +97,12 @@ export default async function IndividualsModulePage() {
                 <th className="px-5 py-3">Mobile</th>
                 <th className="px-5 py-3">Location</th>
                 <th className="px-5 py-3">Role</th>
-                <th className="px-5 py-3">Joined</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-8 text-center text-slate-500">
+                  <td colSpan={5} className="px-5 py-8 text-center text-slate-500">
                     No individual learners yet.
                   </td>
                 </tr>
@@ -131,7 +115,7 @@ export default async function IndividualsModulePage() {
                       </p>
                       <p className="text-xs text-slate-500">{row.id}</p>
                     </td>
-                    <td className="px-5 py-3">{row.email}</td>
+                    <td className="px-5 py-3">{row.email || "—"}</td>
                     <td className="px-5 py-3">{row.mobile || "—"}</td>
                     <td className="px-5 py-3">
                       {[row.city, row.country].filter(Boolean).join(", ") || "—"}
@@ -140,11 +124,6 @@ export default async function IndividualsModulePage() {
                       <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700">
                         {row.role || "—"}
                       </span>
-                    </td>
-                    <td className="px-5 py-3 text-xs text-slate-500">
-                      {row.createdAt
-                        ? new Date(row.createdAt).toLocaleDateString()
-                        : "—"}
                     </td>
                   </tr>
                 ))

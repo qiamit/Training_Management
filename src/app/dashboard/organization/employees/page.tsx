@@ -1,7 +1,13 @@
 import { DashboardShell } from "@/components/dashboard-shell";
 import { appRoleLabel, roleConfigMap } from "@/lib/auth/roles";
 import { requireAuthorizedUser } from "@/lib/auth/session";
-import { createAdminClient } from "@/utils/supabase/admin";
+import { getAppRole } from "@/lib/firebase/auth-user";
+import { listAuthUsers } from "@/lib/firebase/auth-server";
+import {
+  getOrganizationById,
+  getUserProfileByAuthId,
+  listUsersByOrgId,
+} from "@/lib/firebase/db";
 
 const config = roleConfigMap.organization;
 
@@ -21,61 +27,32 @@ async function loadEmployees(authUserId: string): Promise<{
   error?: string;
 }> {
   try {
-    const admin = createAdminClient();
-    const { data: profile, error: profileError } = await admin
-      .from("users")
-      .select("org_id")
-      .eq("auth_user_id", authUserId)
-      .maybeSingle();
-
-    if (profileError) {
-      return { rows: [], orgName: "Your Organization", error: profileError.message };
-    }
-    const orgId = profile?.org_id as string | undefined;
+    const profile = await getUserProfileByAuthId(authUserId);
+    const orgId = profile?.org_id;
     if (!orgId) {
       return { rows: [], orgName: "Your Organization" };
     }
 
-    const [{ data: org }, employeesRes] = await Promise.all([
-      admin.from("organizations").select("name").eq("id", orgId).maybeSingle(),
-      admin
-        .from("users")
-        .select(
-          "id,auth_user_id,full_name,role,designation,mobile,is_active",
-        )
-        .eq("org_id", orgId),
+    const [org, members, authUsers] = await Promise.all([
+      getOrganizationById(orgId),
+      listUsersByOrgId(orgId),
+      listAuthUsers(200),
     ]);
 
-    if (employeesRes.error) {
-      return {
-        rows: [],
-        orgName: org?.name ?? "Your Organization",
-        error: employeesRes.error.message,
-      };
-    }
-
-    const authIds = (employeesRes.data ?? [])
-      .map((row) => String(row.auth_user_id ?? ""))
-      .filter(Boolean);
-
     const emailsById: Record<string, string> = {};
-    if (authIds.length > 0) {
-      const { data: usersList } = await admin.auth.admin.listUsers({
-        page: 1,
-        perPage: 200,
-      });
-      (usersList?.users ?? []).forEach((u) => {
-        if (u.email) emailsById[u.id] = u.email;
-      });
-    }
+    authUsers.forEach((u) => {
+      if (u.email) {
+        emailsById[u.uid] = u.email;
+      }
+    });
 
-    const rows: EmployeeRow[] = (employeesRes.data ?? []).map((row) => ({
-      id: String(row.id ?? ""),
-      fullName: String(row.full_name ?? ""),
-      email: emailsById[String(row.auth_user_id ?? "")] ?? "",
-      role: String(row.role ?? ""),
-      designation: String(row.designation ?? ""),
-      mobile: String(row.mobile ?? ""),
+    const rows: EmployeeRow[] = members.map((row) => ({
+      id: row.auth_user_id,
+      fullName: row.full_name ?? "",
+      email: emailsById[row.auth_user_id] ?? "",
+      role: row.role ?? "",
+      designation: row.designation ?? "",
+      mobile: row.mobile ?? "",
       isActive: row.is_active !== false,
     }));
 
@@ -105,7 +82,7 @@ export default async function EmployeesModulePage() {
       portalLabel="Organization"
       portalAccent={config.accent}
       userEmail={user.email ?? ""}
-      userRoleLabel={appRoleLabel(String(user.app_metadata?.role ?? ""))}
+      userRoleLabel={appRoleLabel(getAppRole(user))}
       navItems={config.navItems}
       activeHref="/dashboard/organization/employees"
     >

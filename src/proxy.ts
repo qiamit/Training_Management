@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { getAppRole } from "@/lib/firebase/auth-user";
+import { updateSession } from "@/lib/firebase/session-proxy";
 import { resolveDashboardFromAppRole } from "@/lib/auth/roles";
-import { updateSession } from "@/utils/supabase/proxy";
 
 const DASHBOARD_PREFIX = "/dashboard";
 
@@ -22,7 +23,7 @@ function dashboardForPath(pathname: string) {
 }
 
 export async function proxy(request: NextRequest) {
-  const { supabaseResponse, user } = await updateSession(request);
+  const { response, user } = await updateSession(request);
   const pathname = request.nextUrl.pathname;
 
   if (pathname === "/login/employee") {
@@ -38,15 +39,13 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL(loginTarget, request.url));
   }
 
-  // Keep role-specific login pages accessible even if a user is already signed in.
-  // This allows switching accounts/portals explicitly from /login/*.
   if (pathname === "/login" && user) {
-    const appRole = String(user.app_metadata?.role ?? "");
+    const appRole = getAppRole(user);
     const dashboardPath = resolveDashboardFromAppRole(appRole);
     return NextResponse.redirect(new URL(dashboardPath, request.url));
   }
 
-  return supabaseResponse;
+  return response;
 }
 
 export const config = {

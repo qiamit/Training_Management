@@ -2,14 +2,13 @@
 
 import { redirect } from "next/navigation";
 
-import { createClient } from "@/utils/supabase/server";
+import { signOutCurrentUser } from "@/lib/firebase/auth-server";
 
 export async function logout() {
   try {
-    const supabase = await createClient();
-    await supabase.auth.signOut();
+    await signOutCurrentUser();
   } catch {
-    // Even if Supabase env is missing, fall through to redirect home.
+    // Fall through to redirect home.
   }
   redirect("/");
 }

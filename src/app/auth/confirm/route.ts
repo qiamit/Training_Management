@@ -1,27 +1,32 @@
-import { type EmailOtpType } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 
-import { createClient } from "@/utils/supabase/server";
+import { firebaseConfig } from "@/lib/firebase/config";
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
-  const tokenHash = requestUrl.searchParams.get("token_hash");
-  const type = requestUrl.searchParams.get("type") as EmailOtpType | null;
+  const mode = requestUrl.searchParams.get("mode");
+  const oobCode = requestUrl.searchParams.get("oobCode");
   const next = requestUrl.searchParams.get("next") ?? "/";
 
-  if (tokenHash && type) {
-    const supabase = await createClient();
-    const { error } = await supabase.auth.verifyOtp({
-      type,
-      token_hash: tokenHash,
-    });
+  if (mode === "verifyEmail" && oobCode && firebaseConfig.apiKey) {
+    const response = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:update?key=${firebaseConfig.apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ oobCode }),
+      },
+    );
 
-    if (!error) {
+    if (response.ok) {
       return NextResponse.redirect(new URL(next, requestUrl.origin));
     }
   }
 
   return NextResponse.redirect(
-    new URL("/login/quality-international?error=Invalid+or+expired+link", requestUrl.origin),
+    new URL(
+      "/login/quality-international?error=Invalid+or+expired+link",
+      requestUrl.origin,
+    ),
   );
 }

@@ -1,53 +1,70 @@
-This is the Quality International Training Platform starter built on [Next.js](https://nextjs.org) App Router + Supabase Auth.
+# Quality International Training Platform
 
-## Getting Started
+Next.js App Router training management platform backed by **Firebase** (Authentication, Firestore, Storage, App Hosting).
 
-Create `.env.local` with:
+## Stack
+
+- [Next.js](https://nextjs.org) 16 (App Router)
+- [Firebase Authentication](https://firebase.google.com/docs/auth) (email/password, custom claims for roles)
+- [Cloud Firestore](https://firebase.google.com/docs/firestore) (organizations, user profiles)
+- [Cloud Storage](https://firebase.google.com/docs/storage) (certificates, org assets)
+- [Firebase App Hosting](https://firebase.google.com/docs/app-hosting) (production deploy)
+
+## Local setup
+
+1. Copy environment variables:
 
 ```bash
-NEXT_PUBLIC_SUPABASE_URL=your-supabase-project-url
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-supabase-publishable-key
-SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
-NEXT_PUBLIC_SITE_URL=http://localhost:3000
+cp .env.example .env.local
 ```
 
-Then run the development server:
+2. **Admin SDK for local dev** (login sessions, approvals, Firestore):
+
+   - **If you can download a service account JSON:** set `FIREBASE_SERVICE_ACCOUNT_JSON` in `.env.local`.
+   - **If key creation is blocked by org policy** (common): leave that variable empty and run:
+     ```bash
+     npm run auth:adc
+     ```
+     Sign in with your Google account that has access to the Firebase project. See [docs/AUTH_WITHOUT_SERVICE_ACCOUNT_KEY.md](docs/AUTH_WITHOUT_SERVICE_ACCOUNT_KEY.md).
+
+3. Enable **Email/Password** sign-in in Firebase Authentication.
+
+4. Install and run:
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000), then choose one of the login portals:
+Open [http://localhost:3000](http://localhost:3000).
 
-- `/login/quality-international`
-- `/login/organization`
-- `/login/individual`
+## GitHub & deploy
 
-For email verification links, ensure Supabase Auth URL settings include your local URL and callback:
+Remote repository: [qiamit/Training_Management](https://github.com/qiamit/Training_Management.git)
 
-- Site URL: `http://localhost:3000`
-- Redirect URL: `http://localhost:3000/auth/confirm`
+```bash
+npx firebase-tools@latest login
+npx firebase-tools@latest use qi-training-management
+npx firebase-tools@latest deploy
+```
 
-## Role-based portal mapping
+Connect App Hosting to the GitHub repo in the Firebase console for push-to-deploy CI/CD.
 
-After sign in, the app validates `user.app_metadata.role` from Supabase Auth:
+## Roles
 
-- `super_admin` -> Quality International dashboard
-- `tenant_admin`, `quality_manager` -> Organization dashboard
-- `employee`, `trainee` -> Employee dashboard
+After sign-in, the app reads `role` and `approval_status` from Firebase Auth **custom claims**:
 
-If a user signs in through the wrong portal, access is denied and the session is signed out.
+| Portal | Allowed roles |
+|--------|----------------|
+| Quality International | `super_admin` |
+| Organization | `tenant_admin`, `quality_manager` |
+| Individual | `individual`, `employee`, `trainee` |
 
-## Pending approval flow
+Quality International signups require super-admin approval via **User Approvals**. Organization and Individual portals are auto-approved on signup.
 
-- Signup is available on each portal login page.
-- New users can create an account and verify email.
-- Until admin assigns `app_metadata.role`, login is blocked with "pending approval" message.
-- Optional: set `app_metadata.approval_status = rejected` to block with explicit rejection message.
-- Super Admin approval queue is available at `/dashboard/quality-international/user-approvals`.
+## Firebase CLI
+
+```bash
+npx firebase-tools@latest --version
+npx firebase-tools@latest emulators:start   # optional local emulators
+```

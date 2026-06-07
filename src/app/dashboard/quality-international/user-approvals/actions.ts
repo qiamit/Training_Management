@@ -3,8 +3,14 @@
 import { revalidatePath } from "next/cache";
 
 import { upsertPublicUserProfile } from "@/lib/auth/provision";
-import { createClient } from "@/utils/supabase/server";
-import { createAdminClient } from "@/utils/supabase/admin";
+import { getAppRole } from "@/lib/firebase/auth-user";
+import {
+  getCurrentUser,
+  getUserById,
+  listAuthUsers,
+  setUserClaims,
+} from "@/lib/firebase/auth-server";
+import { getSignupMeta } from "@/lib/firebase/db";
 
 const APPROVABLE_ROLES = [
   "super_admin",
@@ -16,12 +22,8 @@ const APPROVABLE_ROLES = [
 ] as const;
 
 async function assertSuperAdmin() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const appRole = String(user?.app_metadata?.role ?? "");
+  const user = await getCurrentUser();
+  const appRole = getAppRole(user ?? { id: "" });
   if (!user || appRole !== "super_admin") {
     throw new Error("Unauthorized action.");
   }
@@ -37,24 +39,21 @@ export async function approveUser(formData: FormData) {
     throw new Error("Provide a valid user ID and role.");
   }
 
-  const admin = createAdminClient();
-  const { data, error } = await admin.auth.admin.updateUserById(userId, {
-    app_metadata: {
-      role,
-      approval_status: "approved",
-    },
+  await setUserClaims(userId, {
+    role,
+    approval_status: "approved",
   });
 
-  if (error) {
-    throw new Error(error.message);
-  }
+  const approvedUser = await getUserById(userId);
+  const signupMeta = await getSignupMeta(userId);
 
-  const approvedUser = data.user;
   if (approvedUser?.email) {
     await upsertPublicUserProfile({
-      authUserId: approvedUser.id,
+      authUserId: userId,
       email: approvedUser.email,
-      fullName: String(approvedUser.user_metadata?.full_name ?? ""),
+      fullName:
+        signupMeta?.full_name ??
+        String(approvedUser.user_metadata?.full_name ?? ""),
       role: role as
         | "super_admin"
         | "tenant_admin"
@@ -82,16 +81,9 @@ export async function rejectUser(formData: FormData) {
     throw new Error("User ID is required.");
   }
 
-  const admin = createAdminClient();
-  const { error } = await admin.auth.admin.updateUserById(userId, {
-    app_metadata: {
-      approval_status: "rejected",
-    },
+  await setUserClaims(userId, {
+    approval_status: "rejected",
   });
-
-  if (error) {
-    throw new Error(error.message);
-  }
 
   revalidatePath("/dashboard/quality-international/user-approvals");
 }

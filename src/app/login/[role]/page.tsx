@@ -156,7 +156,7 @@ export default async function RoleLoginPage({
               },
               {
                 title: "Tenant-isolated data",
-                desc: "Postgres RLS enforces strict separation of organizations and learners.",
+                desc: "Firestore security rules enforce strict separation of organizations and learners.",
               },
               {
                 title: "Audit-grade trail",

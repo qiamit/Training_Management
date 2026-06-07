@@ -1,30 +1,23 @@
 import { DashboardShell } from "@/components/dashboard-shell";
 import { appRoleLabel, roleConfigMap } from "@/lib/auth/roles";
 import { requireAuthorizedUser } from "@/lib/auth/session";
-import { createAdminClient } from "@/utils/supabase/admin";
+import { getAppRole } from "@/lib/firebase/auth-user";
+import {
+  getOrganizationById,
+  getUserProfileByAuthId,
+} from "@/lib/firebase/db";
 
 const config = roleConfigMap.organization;
 
 async function loadOrgDetails(authUserId: string) {
   try {
-    const admin = createAdminClient();
-    const { data: profile } = await admin
-      .from("users")
-      .select("org_id,full_name,designation,mobile,city,country")
-      .eq("auth_user_id", authUserId)
-      .maybeSingle();
-
-    const orgId = profile?.org_id as string | undefined;
+    const profile = await getUserProfileByAuthId(authUserId);
+    const orgId = profile?.org_id;
     if (!orgId) {
       return { profile, org: null };
     }
 
-    const { data: org } = await admin
-      .from("organizations")
-      .select("*")
-      .eq("id", orgId)
-      .maybeSingle();
-
+    const org = await getOrganizationById(orgId);
     return { profile, org };
   } catch {
     return { profile: null, org: null };
@@ -56,12 +49,19 @@ export default async function OrganizationDetailsModulePage() {
 
   const { profile, org } = await loadOrgDetails(user.id);
 
+  const createdAt =
+    org?.created_at && typeof org.created_at !== "string"
+      ? org.created_at.toDate?.().toLocaleDateString()
+      : org?.created_at
+        ? new Date(org.created_at as string).toLocaleDateString()
+        : null;
+
   return (
     <DashboardShell
       portalLabel="Organization"
       portalAccent={config.accent}
       userEmail={user.email ?? ""}
-      userRoleLabel={appRoleLabel(String(user.app_metadata?.role ?? ""))}
+      userRoleLabel={appRoleLabel(getAppRole(user))}
       navItems={config.navItems}
       activeHref="/dashboard/organization/details"
     >
@@ -83,46 +83,29 @@ export default async function OrganizationDetailsModulePage() {
             Organization profile
           </p>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <ReadOnlyField
-              label="Organization name"
-              value={(org?.name as string | undefined) ?? null}
-            />
+            <ReadOnlyField label="Organization name" value={org?.name ?? null} />
             <ReadOnlyField
               label="ISO accreditations"
               value={
-                Array.isArray(org?.iso_accreditations) &&
-                org.iso_accreditations.length > 0
-                  ? (org.iso_accreditations as string[]).join(", ")
+                org?.iso_accreditations && org.iso_accreditations.length > 0
+                  ? org.iso_accreditations.join(", ")
                   : "—"
               }
             />
-            <ReadOnlyField
-              label="Tenant ID"
-              value={(org?.id as string | undefined) ?? null}
-            />
-            <ReadOnlyField
-              label="Created"
-              value={
-                org?.created_at
-                  ? new Date(org.created_at as string).toLocaleDateString()
-                  : null
-              }
-            />
+            <ReadOnlyField label="Tenant ID" value={org?.id ?? null} />
+            <ReadOnlyField label="Created" value={createdAt} />
           </div>
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <p className="text-sm font-semibold text-slate-700">Primary contact</p>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <ReadOnlyField label="Full name" value={profile?.full_name as string} />
-            <ReadOnlyField
-              label="Designation"
-              value={profile?.designation as string}
-            />
+            <ReadOnlyField label="Full name" value={profile?.full_name} />
+            <ReadOnlyField label="Designation" value={profile?.designation} />
             <ReadOnlyField label="Email" value={user.email} />
-            <ReadOnlyField label="Mobile" value={profile?.mobile as string} />
-            <ReadOnlyField label="City" value={profile?.city as string} />
-            <ReadOnlyField label="Country" value={profile?.country as string} />
+            <ReadOnlyField label="Mobile" value={profile?.mobile} />
+            <ReadOnlyField label="City" value={profile?.city} />
+            <ReadOnlyField label="Country" value={profile?.country} />
           </div>
         </div>
       </section>
