@@ -1,35 +1,47 @@
 # Quality International Training Platform
 
-Next.js App Router training management platform backed by **Firebase** (Authentication, Firestore, Storage, App Hosting).
+Vite + React + TypeScript + Tailwind SPA backed by **Supabase** (Auth, Postgres, Storage) and deployed on **Vercel**.
 
-## Stack
+## Roles
 
-- [Next.js](https://nextjs.org) 16 (App Router)
-- [Firebase Authentication](https://firebase.google.com/docs/auth) (email/password, custom claims for roles)
-- [Cloud Firestore](https://firebase.google.com/docs/firestore) (organizations, user profiles)
-- [Cloud Storage](https://firebase.google.com/docs/storage) (certificates, org assets)
-- [Firebase App Hosting](https://firebase.google.com/docs/app-hosting) (production deploy)
+| Portal | Roles |
+|--------|--------|
+| Quality International | `super_admin`, `trainer`, `employee` |
+| Organization | `org_admin`, `org_employee` (employees use learner dashboard) |
+| Individual | `individual` |
+
+- QI staff signups (except bootstrap emails) stay **pending** until a super admin approves them as Employee or Trainer.
+- Organization signup creates a tenant + `org_admin` (auto-approved).
+- Org admins invite employees via link; invitees become `org_employee`.
+- Individual signup joins the Independent Learners org (auto-approved).
+- Bootstrap super admin email (default `amitrajput183@gmail.com`) is seeded in `bootstrap_super_admins`.
 
 ## Local setup
 
-1. Copy environment variables:
+1. Create a Supabase project (or use an existing one).
+
+2. Run the SQL migration in the Supabase SQL editor (or CLI):
 
 ```bash
-cp .env.example .env.local
+# Option A: paste file contents in Dashboard → SQL
+# supabase/migrations/20260712000000_init.sql
+
+# Option B: Supabase CLI
+npx supabase db push
 ```
 
-2. **Admin SDK for local dev** (login sessions, approvals, Firestore):
+3. In Supabase Auth settings, add redirect URL:
 
-   - **If you can download a service account JSON:** set `FIREBASE_SERVICE_ACCOUNT_JSON` in `.env.local`.
-   - **If key creation is blocked by org policy** (common): leave that variable empty and run:
-     ```bash
-     npm run auth:adc
-     ```
-     Sign in with your Google account that has access to the Firebase project. See [docs/AUTH_WITHOUT_SERVICE_ACCOUNT_KEY.md](docs/AUTH_WITHOUT_SERVICE_ACCOUNT_KEY.md).
+- `http://localhost:3000/auth/callback`
+- Your Vercel URL + `/auth/callback`
 
-3. Enable **Email/Password** sign-in in Firebase Authentication.
+4. Copy env and fill keys from Project Settings → API:
 
-4. Install and run:
+```bash
+cp .env.example .env
+```
+
+5. Install and run:
 
 ```bash
 npm install
@@ -38,33 +50,35 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-## GitHub & deploy
+## Deploy on Vercel
 
-Remote repository: [qiamit/Training_Management](https://github.com/qiamit/Training_Management.git)
+1. Push this repo to GitHub.
+2. Import the project in Vercel (Framework Preset: Vite).
+3. Set environment variables:
 
-```bash
-npx firebase-tools@latest login
-npx firebase-tools@latest use qi-training-management
-npx firebase-tools@latest deploy
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+- `VITE_SITE_URL` (your production URL)
+- `VITE_BOOTSTRAP_SUPER_ADMIN_EMAILS` (optional; DB seed still applies)
+
+`vercel.json` already rewrites all routes to `index.html` for SPA routing.
+
+## Project structure
+
+```
+src/
+  features/auth/     Auth provider + route guards
+  lib/auth/          Role / portal config
+  lib/supabase/      Client + types
+  pages/             Landing, login, dashboards
+  components/        Shell + brand
+supabase/migrations/ Postgres schema, RLS, storage, signup trigger
 ```
 
-Connect App Hosting to the GitHub repo in the Firebase console for push-to-deploy CI/CD.
+## Scripts
 
-## Roles
-
-After sign-in, the app reads `role` and `approval_status` from Firebase Auth **custom claims**:
-
-| Portal | Allowed roles |
-|--------|----------------|
-| Quality International | `super_admin` |
-| Organization | `tenant_admin`, `quality_manager` |
-| Individual | `individual`, `employee`, `trainee` |
-
-Quality International signups require super-admin approval via **User Approvals**. Organization and Individual portals are auto-approved on signup.
-
-## Firebase CLI
-
-```bash
-npx firebase-tools@latest --version
-npx firebase-tools@latest emulators:start   # optional local emulators
-```
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Vite dev server (port 3000) |
+| `npm run build` | Production build |
+| `npm run preview` | Preview production build |

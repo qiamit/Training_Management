@@ -1,0 +1,6 @@
+-- Optional notes after applying 20260712000000_init.sql
+-- Bootstrap super admin emails live in public.bootstrap_super_admins
+-- Default seed: amitrajput183@gmail.com
+--
+-- After first login with that email (via QI signup), the trigger grants
+-- role = super_admin and approval_status = approved automatically.

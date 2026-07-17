@@ -1,3 +1,5 @@
+import { BRAND } from "@/lib/brand";
+
 type BrandMarkProps = {
   size?: "sm" | "md" | "lg";
   variant?: "dark" | "light";
@@ -20,14 +22,14 @@ export function BrandMark({ size = "md", variant = "dark" }: BrandMarkProps) {
       } ${sizeClasses[size]}`}
       aria-hidden="true"
     >
-      QI
+      {BRAND.initials}
     </span>
   );
 }
 
 export function BrandLockup({
   variant = "dark",
-  tagline = "Training & Compliance",
+  tagline = BRAND.tagline,
 }: {
   variant?: "dark" | "light";
   tagline?: string;
@@ -36,13 +38,13 @@ export function BrandLockup({
   return (
     <div className="flex items-center gap-3">
       <BrandMark variant={variant} />
-      <div className="leading-tight">
+      <div className="min-w-0 leading-tight">
         <p
-          className={`text-sm font-bold tracking-tight ${
+          className={`truncate text-sm font-bold tracking-tight ${
             isLight ? "text-white" : "text-slate-900"
           }`}
         >
-          Quality International
+          {BRAND.shortName}
         </p>
         <p
           className={`text-[11px] font-medium uppercase tracking-[0.18em] ${
