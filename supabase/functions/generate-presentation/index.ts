@@ -12,17 +12,60 @@ type Body = {
   programmeId?: string;
   extraInstructions?: string;
   matterAssetIds?: string[];
+  documentName?: string;
+  documentMode?: string;
+  documentType?: string;
   /** improve | recreate a single slide on an existing presentation asset */
   action?: "generate" | "improve" | "recreate";
   assetId?: string;
   slideIndex?: number;
 };
 
+type SlideChartPoint = { label: string; value: number };
+type SlideCard = { title: string; text: string; icon?: string };
+type SlideStep = { title: string; text: string };
+type SlideCallout = {
+  label?: string;
+  text: string;
+  tone?: "info" | "warning" | "success" | "tip";
+};
+type SlideChart = {
+  type?: "bar" | "pie" | "donut";
+  title?: string;
+  unit?: string;
+  data: SlideChartPoint[];
+};
+type SlideVisual = {
+  kind?: "icon" | "illustration";
+  icon?: string;
+  caption?: string;
+};
+
 type Slide = {
   title: string;
+  subtitle?: string;
   bullets: string[];
   notes?: string;
+  layout?:
+    | "title"
+    | "bullets"
+    | "split"
+    | "cards"
+    | "chart"
+    | "steps"
+    | "callout"
+    | "quote";
+  callout?: SlideCallout;
+  cards?: SlideCard[];
+  steps?: SlideStep[];
+  chart?: SlideChart;
+  visual?: SlideVisual;
+  quote?: { text: string; attribution?: string };
 };
+
+const SLIDE_ITEM_SHAPE =
+  '{"title":"...","subtitle":"...","layout":"bullets|split|cards|chart|steps|callout|quote|title","bullets":["..."],"notes":"...","callout":{"label":"Info","text":"...","tone":"info|warning|success|tip"},"cards":[{"title":"...","text":"...","icon":"audit|checklist|people|process|shield|chart|lightbulb|document|target|training|quality|lab"}],"steps":[{"title":"...","text":"..."}],"chart":{"type":"bar|pie|donut","title":"...","unit":"%","data":[{"label":"...","value":40}]},"visual":{"kind":"illustration","icon":"audit","caption":"..."},"quote":{"text":"...","attribution":"..."}}';
+const SLIDE_JSON_SHAPE = `{"slides":[${SLIDE_ITEM_SHAPE}]}`;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -209,13 +252,18 @@ Deno.serve(async (req) => {
     const systemPrompt = [
       settings.ai_system_prompt?.trim() ||
         "You are an expert corporate training instructional designer.",
-      "Create a clear, professional training presentation deck.",
+      "Create a clear, professional, visually rich training presentation deck.",
       "Return ONLY valid JSON with this shape:",
-      '{"slides":[{"title":"...","bullets":["..."],"notes":"..."}]}',
-      "Follow trainer options for session time, language, slide/page count, style, and audience level when provided.",
-      "Include title, agenda, learning objectives, key concepts, examples, summary, and next steps as appropriate for the requested length.",
-      "Bullets should be concise training talking points (max 6 per slide).",
+      SLIDE_JSON_SHAPE,
+      "Follow trainer options for session time, language, slide/page count, style, audience level, document name, mode (PPT/PDF/Word/Excel), and type when provided.",
+      "Vary layouts across the deck — do NOT make every slide plain bullets.",
+      "Across the deck include a healthy mix of: title/agenda, bullets, info callouts, icon cards, process steps, at least 1–2 chart slides (bar/pie/donut with realistic numeric data), split slides with visual panels, and a summary/next-steps slide.",
+      "Use layout field on every slide. Prefer cards/steps/chart/callout/split when content fits.",
+      "For images/visuals: use visual.icon from the allowed icon set (no external image URLs).",
+      "Chart data must be plausible for the training topic (percentages, counts, findings, readiness scores, etc.).",
+      "Bullets should be concise talking points (max 5 per slide when used).",
       "Write all slide text in the requested presentation language.",
+      "If a document/presentation name is provided, use it as the deck title theme.",
     ].join("\n");
 
     const userPrompt = [
@@ -223,6 +271,15 @@ Deno.serve(async (req) => {
       `Category: ${programme.category || "General"}`,
       `Duration hours: ${programme.duration_hours ?? "N/A"}`,
       `Delivery mode: ${programme.delivery_mode || "N/A"}`,
+      body.documentName?.trim()
+        ? `Presentation name: ${body.documentName.trim()}`
+        : "",
+      body.documentMode?.trim()
+        ? `Mode of presentation: ${body.documentMode.trim()}`
+        : "",
+      body.documentType?.trim()
+        ? `Type of presentation: ${body.documentType.trim()}`
+        : "",
       `Programme description:\n${programme.description || "N/A"}`,
       body.extraInstructions?.trim()
         ? `Extra instructions from trainer:\n${body.extraInstructions.trim()}`
@@ -246,17 +303,20 @@ Deno.serve(async (req) => {
       return json({ error: "AI returned no slides" }, 502);
     }
 
+    const displayTitle =
+      body.documentName?.trim() || programme.title;
     const html = buildPresentationHtml({
-      topic: programme.title,
+      topic: displayTitle,
       slides,
     });
     const bytes = new TextEncoder().encode(html);
     const stamp = new Date().toISOString().slice(0, 10);
-    const safeTopic = programme.title
+    const safeTopic = displayTitle
       .replace(/[^\w.\-()+ ]+/g, "_")
       .slice(0, 60)
       .trim() || "Training";
-    const fileName = `AI Presentation - ${safeTopic} - ${stamp}.html`;
+    const modeTag = (body.documentMode || "PPT").replace(/[^\w]+/g, "");
+    const fileName = `AI Presentation - ${safeTopic} - ${modeTag} - ${stamp}.html`;
     const storagePath =
       `${programmeId}/presentation/${Date.now()}-ai-presentation.html`;
 
@@ -286,7 +346,12 @@ Deno.serve(async (req) => {
         file_size: bytes.byteLength,
         mime_type: "text/html",
         uploaded_by: user.id,
-        content_json: { topic: programme.title, slides },
+        content_json: {
+          topic: displayTitle,
+          slides,
+          documentMode: body.documentMode || null,
+          documentType: body.documentType || null,
+        },
       })
       .select("*")
       .single();
@@ -426,10 +491,11 @@ async function improveExistingSlide(args: {
     settings.ai_system_prompt?.trim() ||
       "You are an expert corporate training presentation designer.",
     "Return ONLY valid JSON with this shape:",
-    '{"slide":{"title":"...","bullets":["..."],"notes":"..."}}',
+    `{"slide":${SLIDE_ITEM_SHAPE}}`,
     action === "recreate"
-      ? "Fully recreate this one slide with fresh wording and structure, keeping the same learning objective."
-      : "Improve this one slide: clearer title, stronger bullets (3–6), better trainer notes. Keep the same core topic.",
+      ? "Fully recreate this one slide with a richer visual layout (cards, chart, callout, steps, or split+visual) while keeping the same learning objective."
+      : "Improve this one slide: clearer title, stronger content, and enrich with callout/cards/chart/visual when useful. Keep the same core topic.",
+    "Prefer a visually useful layout over plain bullets when content supports it.",
     "Do not return the full deck — only the single improved/recreated slide.",
     "Write in the same language as the current slide.",
   ].join("\n");
@@ -517,22 +583,159 @@ async function improveExistingSlide(args: {
   });
 }
 
+function normalizeSlide(raw: unknown): Slide | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Record<string, unknown>;
+  const title = String(row.title ?? "").trim();
+  if (!title) return null;
+
+  const bullets = Array.isArray(row.bullets)
+    ? row.bullets.map((b) => String(b).trim()).filter(Boolean)
+    : [];
+
+  const cards = Array.isArray(row.cards)
+    ? row.cards
+        .map((c) => {
+          const card = c as Record<string, unknown>;
+          return {
+            title: String(card.title ?? "").trim(),
+            text: String(card.text ?? "").trim(),
+            icon: card.icon != null ? String(card.icon).trim() : undefined,
+          };
+        })
+        .filter((c) => c.title || c.text)
+    : undefined;
+
+  const steps = Array.isArray(row.steps)
+    ? row.steps
+        .map((s) => {
+          const step = s as Record<string, unknown>;
+          return {
+            title: String(step.title ?? "").trim(),
+            text: String(step.text ?? "").trim(),
+          };
+        })
+        .filter((s) => s.title || s.text)
+    : undefined;
+
+  let chart: SlideChart | undefined;
+  if (row.chart && typeof row.chart === "object") {
+    const ch = row.chart as Record<string, unknown>;
+    const data = Array.isArray(ch.data)
+      ? ch.data
+          .map((d) => {
+            const point = d as Record<string, unknown>;
+            return {
+              label: String(point.label ?? "").trim(),
+              value: Number(point.value ?? 0),
+            };
+          })
+          .filter((d) => d.label && Number.isFinite(d.value))
+      : [];
+    if (data.length) {
+      chart = {
+        type:
+          ch.type === "pie" || ch.type === "donut" || ch.type === "bar"
+            ? ch.type
+            : "bar",
+        title: ch.title != null ? String(ch.title).trim() : undefined,
+        unit: ch.unit != null ? String(ch.unit).trim() : undefined,
+        data,
+      };
+    }
+  }
+
+  let callout: SlideCallout | undefined;
+  if (row.callout && typeof row.callout === "object") {
+    const c = row.callout as Record<string, unknown>;
+    const text = String(c.text ?? "").trim();
+    if (text) {
+      callout = {
+        text,
+        label: c.label != null ? String(c.label).trim() : undefined,
+        tone:
+          c.tone === "warning" ||
+          c.tone === "success" ||
+          c.tone === "tip" ||
+          c.tone === "info"
+            ? c.tone
+            : "info",
+      };
+    }
+  }
+
+  let visual: SlideVisual | undefined;
+  if (row.visual && typeof row.visual === "object") {
+    const v = row.visual as Record<string, unknown>;
+    visual = {
+      kind: v.kind === "illustration" ? "illustration" : "icon",
+      icon: v.icon != null ? String(v.icon).trim() : "lightbulb",
+      caption: v.caption != null ? String(v.caption).trim() : undefined,
+    };
+  }
+
+  let quote: Slide["quote"];
+  if (row.quote && typeof row.quote === "object") {
+    const q = row.quote as Record<string, unknown>;
+    const text = String(q.text ?? "").trim();
+    if (text) {
+      quote = {
+        text,
+        attribution:
+          q.attribution != null ? String(q.attribution).trim() : undefined,
+      };
+    }
+  }
+
+  const layoutRaw = String(row.layout ?? "").trim().toLowerCase();
+  const layout: Slide["layout"] =
+    layoutRaw === "title" ||
+    layoutRaw === "bullets" ||
+    layoutRaw === "split" ||
+    layoutRaw === "cards" ||
+    layoutRaw === "chart" ||
+    layoutRaw === "steps" ||
+    layoutRaw === "callout" ||
+    layoutRaw === "quote"
+      ? layoutRaw
+      : chart
+        ? "chart"
+        : cards?.length
+          ? "cards"
+          : steps?.length
+            ? "steps"
+            : callout
+              ? "callout"
+              : quote
+                ? "quote"
+                : visual && bullets.length
+                  ? "split"
+                  : bullets.length
+                    ? "bullets"
+                    : "title";
+
+  return {
+    title,
+    subtitle: row.subtitle != null ? String(row.subtitle).trim() : "",
+    bullets,
+    notes: row.notes != null ? String(row.notes).trim() : "",
+    layout,
+    callout,
+    cards,
+    steps,
+    chart,
+    visual,
+    quote,
+  };
+}
+
 function extractSlidesFromContentJson(contentJson: unknown): Slide[] {
   if (!contentJson || typeof contentJson !== "object") return [];
   const root = contentJson as { slides?: unknown };
   if (!Array.isArray(root.slides)) return [];
   return root.slides
-    .map((s) => {
-      const row = s as Record<string, unknown>;
-      return {
-        title: String(row.title ?? "").trim(),
-        bullets: Array.isArray(row.bullets)
-          ? row.bullets.map((b) => String(b).trim()).filter(Boolean)
-          : [],
-        notes: row.notes != null ? String(row.notes).trim() : "",
-      };
-    })
-    .filter((s) => s.title);
+    .map(normalizeSlide)
+    .filter((s): s is Slide => !!s);
 }
 
 async function loadSlidesFromStorage(
@@ -553,17 +756,8 @@ async function loadSlidesFromStorage(
     if (!match) return { topic, slides: [] };
     const parsed = JSON.parse(match[1]) as unknown[];
     const slides = parsed
-      .map((s) => {
-        const row = s as Record<string, unknown>;
-        return {
-          title: String(row.title ?? "").trim(),
-          bullets: Array.isArray(row.bullets)
-            ? row.bullets.map((b) => String(b).trim()).filter(Boolean)
-            : [],
-          notes: row.notes != null ? String(row.notes).trim() : "",
-        };
-      })
-      .filter((s) => s.title);
+      .map(normalizeSlide)
+      .filter((s): s is Slide => !!s);
     return { topic, slides };
   } catch {
     return { topic: "", slides: [] };
@@ -655,15 +849,7 @@ function parseOneSlide(content: string): Slide | null {
     parsed.slide && typeof parsed.slide === "object"
       ? (parsed.slide as Record<string, unknown>)
       : parsed;
-  const title = String(slideRaw.title ?? "").trim();
-  if (!title) return null;
-  return {
-    title,
-    bullets: Array.isArray(slideRaw.bullets)
-      ? slideRaw.bullets.map((b) => String(b).trim()).filter(Boolean)
-      : [],
-    notes: slideRaw.notes != null ? String(slideRaw.notes).trim() : "",
-  };
+  return normalizeSlide(slideRaw);
 }
 
 function isGeminiProvider(provider: string) {
@@ -813,16 +999,8 @@ function parseSlides(content: unknown): Slide[] {
   }
   if (!Array.isArray(parsed.slides)) return [];
   return parsed.slides
-    .map((s) => {
-      const row = s as Record<string, unknown>;
-      const title = String(row.title ?? "").trim();
-      const bullets = Array.isArray(row.bullets)
-        ? row.bullets.map((b) => String(b).trim()).filter(Boolean)
-        : [];
-      const notes = row.notes != null ? String(row.notes).trim() : "";
-      return { title, bullets, notes };
-    })
-    .filter((s) => s.title);
+    .map(normalizeSlide)
+    .filter((s): s is Slide => !!s);
 }
 
 function buildPresentationHtml(args: {
@@ -838,24 +1016,58 @@ function buildPresentationHtml(args: {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${topic} — Training Presentation</title>
   <style>
-    :root { --bg:#0f172a; --text:#f8fafc; --muted:#94a3b8; --accent:#6366f1; --accent-2:#22d3ee; }
+    :root { --bg:#07111f; --text:#f8fafc; --muted:#94a3b8; --accent:#6366f1; --accent-2:#22d3ee; --card:rgba(255,255,255,.06); --line:rgba(255,255,255,.12); }
     * { box-sizing: border-box; }
     html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font-family:Segoe UI, system-ui, sans-serif; }
     .shell { display:flex; flex-direction:column; height:100%; }
-    .toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid #334155; }
+    .toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid #1e293b; background:#0b1324; }
     .toolbar h1 { margin:0; font-size:14px; font-weight:600; color:var(--muted); }
     .toolbar .actions { display:flex; flex-wrap:wrap; gap:8px; }
     button { border:0; border-radius:8px; padding:8px 12px; font-weight:600; font-size:13px; cursor:pointer; background:#334155; color:white; }
     button.primary { background:var(--accent); }
     button:disabled { opacity:.45; cursor:default; }
-    .stage { flex:1; display:grid; place-items:center; padding:24px; }
-    .slide { width:min(1100px,100%); aspect-ratio:16/9; background:radial-gradient(circle at top right, rgba(99,102,241,.35), transparent 40%), linear-gradient(145deg,#0b1224,#1e293b 55%,#0f172a); border:1px solid #334155; border-radius:18px; padding:clamp(24px,4vw,48px); box-shadow:0 30px 80px rgba(0,0,0,.35); display:flex; flex-direction:column; justify-content:center; }
-    .eyebrow { color:var(--accent-2); font-size:12px; letter-spacing:.14em; text-transform:uppercase; margin-bottom:12px; }
-    .slide h2 { margin:0 0 18px; font-size:clamp(28px,4vw,42px); line-height:1.15; }
-    .slide ul { margin:0; padding-left:1.2em; display:grid; gap:10px; }
-    .slide li { font-size:clamp(16px,2.2vw,22px); line-height:1.35; color:#e2e8f0; }
-    .notes { margin-top:18px; color:var(--muted); font-size:13px; }
-    .footer { display:flex; justify-content:space-between; align-items:center; padding:10px 14px; border-top:1px solid #334155; color:var(--muted); font-size:12px; }
+    .stage { flex:1; display:grid; place-items:center; padding:18px; background:radial-gradient(circle at top right, rgba(56,189,248,.12), transparent 35%), radial-gradient(circle at bottom left, rgba(99,102,241,.16), transparent 40%), #07111f; }
+    .slide { width:min(1100px,100%); aspect-ratio:16/9; background:linear-gradient(145deg,#0b1224,#1e293b 55%,#0f172a); border:1px solid #334155; border-radius:18px; padding:clamp(18px,3vw,36px); box-shadow:0 30px 80px rgba(0,0,0,.35); display:flex; flex-direction:column; overflow:auto; position:relative; }
+    .eyebrow { color:var(--accent-2); font-size:11px; letter-spacing:.14em; text-transform:uppercase; margin-bottom:8px; font-weight:700; }
+    .slide h2 { margin:0; font-size:clamp(22px,3.2vw,36px); line-height:1.15; }
+    .subtitle { margin:8px 0 0; color:#cbd5e1; font-size:clamp(13px,1.5vw,16px); }
+    .grid { display:grid; gap:14px; margin-top:16px; flex:1; }
+    .grid.split { grid-template-columns:1.1fr .9fr; }
+    @media (max-width:900px){ .grid.split { grid-template-columns:1fr; } }
+    .bullets { margin:0; padding:0; list-style:none; display:grid; gap:8px; }
+    .bullets li { display:flex; gap:10px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:10px 12px; font-size:clamp(13px,1.6vw,17px); line-height:1.35; color:#e2e8f0; }
+    .dot { width:7px; height:7px; border-radius:999px; background:var(--accent-2); margin-top:7px; flex:0 0 auto; }
+    .callout { border-radius:14px; border:1px solid rgba(56,189,248,.35); background:rgba(56,189,248,.1); padding:12px 14px; font-size:14px; }
+    .callout.warn { border-color:rgba(251,191,36,.4); background:rgba(251,191,36,.1); }
+    .callout.ok { border-color:rgba(52,211,153,.4); background:rgba(52,211,153,.1); }
+    .callout.tip { border-color:rgba(167,139,250,.4); background:rgba(167,139,250,.1); }
+    .callout .lbl { font-size:10px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; opacity:.85; margin-bottom:4px; }
+    .cards { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+    .card { border:1px solid var(--line); border-radius:14px; background:linear-gradient(145deg,rgba(255,255,255,.1),rgba(255,255,255,.03)); padding:12px; }
+    .card .ico { width:32px; height:32px; border-radius:10px; display:grid; place-items:center; background:rgba(34,211,238,.15); margin-bottom:8px; font-size:16px; }
+    .card h3 { margin:0 0 4px; font-size:14px; }
+    .card p { margin:0; font-size:12px; color:#cbd5e1; line-height:1.4; }
+    .steps { display:grid; gap:8px; }
+    .step { display:flex; gap:12px; border:1px solid var(--line); border-radius:14px; background:var(--card); padding:10px 12px; }
+    .num { width:28px; height:28px; border-radius:999px; display:grid; place-items:center; background:rgba(99,102,241,.35); font-size:12px; font-weight:800; flex:0 0 auto; }
+    .step h3 { margin:0; font-size:14px; }
+    .step p { margin:2px 0 0; font-size:12px; color:#cbd5e1; }
+    .panel { border:1px solid var(--line); border-radius:16px; background:rgba(255,255,255,.05); padding:14px; }
+    .panel h4 { margin:0 0 10px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:#a5f3fc; }
+    .bars { display:flex; align-items:flex-end; gap:10px; height:150px; }
+    .bar-col { flex:1; min-width:0; display:flex; flex-direction:column; align-items:center; gap:6px; height:100%; justify-content:flex-end; }
+    .bar { width:100%; border-radius:8px 8px 4px 4px; min-height:8px; }
+    .bar-col span { font-size:10px; color:#cbd5e1; text-align:center; width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .legend { display:grid; gap:6px; margin-top:8px; font-size:12px; }
+    .legend div { display:flex; gap:8px; align-items:center; }
+    .swatch { width:10px; height:10px; border-radius:999px; }
+    .visual { min-height:160px; border:1px dashed rgba(34,211,238,.35); border-radius:16px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; background:radial-gradient(circle at center, rgba(34,211,238,.12), transparent 60%); padding:16px; }
+    .visual .big { width:72px; height:72px; border-radius:22px; display:grid; place-items:center; background:rgba(255,255,255,.1); font-size:34px; margin-bottom:10px; }
+    .quote { border:1px solid var(--line); border-radius:16px; background:var(--card); padding:16px 18px; }
+    .quote p { margin:0; font-size:clamp(15px,2vw,20px); font-style:italic; line-height:1.45; }
+    .quote footer { margin-top:10px; font-size:12px; color:#a5f3fc; font-weight:700; }
+    .notes { margin-top:14px; color:var(--muted); font-size:12px; border-top:1px solid var(--line); padding-top:10px; }
+    .footer { display:flex; justify-content:space-between; align-items:center; padding:10px 14px; border-top:1px solid #1e293b; color:var(--muted); font-size:12px; background:#0b1324; }
     @media print { .toolbar { display:none !important; } .shell,.stage { display:block; height:auto; } .slide { page-break-after:always; box-shadow:none; border-radius:0; border:0; width:100%; aspect-ratio:auto; min-height:90vh; } }
   </style>
 </head>
@@ -875,6 +1087,8 @@ function buildPresentationHtml(args: {
   </div>
   <script>
     const slides = ${slidesJson};
+    const COLORS = ["#38bdf8","#818cf8","#34d399","#fbbf24","#fb7185","#a78bfa","#2dd4bf","#f472b6"];
+    const ICONS = { audit:"🔎", checklist:"✅", people:"👥", process:"⚙️", shield:"🛡️", chart:"📊", lightbulb:"💡", document:"📄", target:"🎯", warning:"⚠️", training:"🎓", quality:"⭐", lab:"🧪", clock:"⏱️" };
     let index = 0;
     const slideView = document.getElementById("slideView");
     const counter = document.getElementById("counter");
@@ -887,14 +1101,81 @@ function buildPresentationHtml(args: {
         .split(">").join("&gt;")
         .split('"').join("&quot;");
     }
+    function iconGlyph(name) {
+      return ICONS[String(name || "lightbulb").toLowerCase()] || "📌";
+    }
+    function renderBars(chart) {
+      const max = Math.max.apply(null, chart.data.map(function(d){ return d.value; }).concat([1]));
+      const cols = chart.data.map(function(d, i) {
+        const h = Math.max(8, Math.round((d.value / max) * 100));
+        return '<div class="bar-col"><span>' + escapeHtml(String(d.value)) + '</span><div class="bar" style="height:' + h + '%;background:linear-gradient(180deg,' + COLORS[i % COLORS.length] + ',' + COLORS[i % COLORS.length] + '99)"></div><span>' + escapeHtml(d.label) + '</span></div>';
+      }).join("");
+      return '<div class="panel"><h4>' + escapeHtml(chart.title || "Chart") + (chart.unit ? " (" + escapeHtml(chart.unit) + ")" : "") + '</h4><div class="bars">' + cols + '</div></div>';
+    }
+    function renderPie(chart) {
+      const total = chart.data.reduce(function(sum, d){ return sum + Math.max(0, d.value); }, 0) || 1;
+      let angle = -90;
+      const slices = chart.data.map(function(d, i) {
+        const sweep = (Math.max(0, d.value) / total) * 360;
+        const start = angle; angle += sweep;
+        const large = sweep > 180 ? 1 : 0;
+        const r = 42;
+        const startRad = start * Math.PI / 180;
+        const endRad = (start + sweep) * Math.PI / 180;
+        const x1 = 50 + r * Math.cos(startRad);
+        const y1 = 50 + r * Math.sin(startRad);
+        const x2 = 50 + r * Math.cos(endRad);
+        const y2 = 50 + r * Math.sin(endRad);
+        const path = "M50 50 L " + x1 + " " + y1 + " A " + r + " " + r + " 0 " + large + " 1 " + x2 + " " + y2 + " Z";
+        return { path: path, color: COLORS[i % COLORS.length], label: d.label, value: d.value };
+      });
+      const paths = slices.map(function(s){ return '<path d="' + s.path + '" fill="' + s.color + '" opacity="0.92"></path>'; }).join("");
+      const donut = chart.type === "donut" ? '<circle cx="50" cy="50" r="22" fill="#0b1224"></circle>' : "";
+      const legend = slices.map(function(s){ return '<div><span class="swatch" style="background:' + s.color + '"></span><span style="flex:1">' + escapeHtml(s.label) + '</span><strong>' + escapeHtml(String(s.value)) + '</strong></div>'; }).join("");
+      return '<div class="panel"><h4>' + escapeHtml(chart.title || "Chart") + '</h4><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><svg viewBox="0 0 100 100" width="150" height="150">' + paths + donut + '</svg><div class="legend" style="flex:1;min-width:140px">' + legend + '</div></div></div>';
+    }
     function render() {
       const s = slides[index] || { title: "Empty", bullets: [] };
-      const bullets = (s.bullets || []).map((b) => "<li>" + escapeHtml(b) + "</li>").join("");
+      const layout = s.layout || "bullets";
+      const bullets = (s.bullets || []).map(function(b){ return '<li><span class="dot"></span><span>' + escapeHtml(b) + '</span></li>'; }).join("");
+      let left = "";
+      if (bullets && layout !== "cards" && layout !== "steps" && layout !== "quote") {
+        left += '<ul class="bullets">' + bullets + '</ul>';
+      }
+      if (s.callout && s.callout.text) {
+        const tone = s.callout.tone === "warning" ? "warn" : s.callout.tone === "success" ? "ok" : s.callout.tone === "tip" ? "tip" : "";
+        left += '<div class="callout ' + tone + '"><div class="lbl">' + escapeHtml(s.callout.label || "Info") + '</div>' + escapeHtml(s.callout.text) + '</div>';
+      }
+      if (s.quote && s.quote.text) {
+        left += '<div class="quote"><p>“' + escapeHtml(s.quote.text) + '”</p>' + (s.quote.attribution ? '<footer>— ' + escapeHtml(s.quote.attribution) + '</footer>' : '') + '</div>';
+      }
+      if (s.cards && s.cards.length) {
+        left += '<div class="cards">' + s.cards.map(function(c){
+          return '<div class="card"><div class="ico">' + iconGlyph(c.icon) + '</div><h3>' + escapeHtml(c.title || "") + '</h3><p>' + escapeHtml(c.text || "") + '</p></div>';
+        }).join("") + '</div>';
+      }
+      if (s.steps && s.steps.length) {
+        left += '<div class="steps">' + s.steps.map(function(st, i){
+          return '<div class="step"><div class="num">' + (i + 1) + '</div><div><h3>' + escapeHtml(st.title || "") + '</h3>' + (st.text ? '<p>' + escapeHtml(st.text) + '</p>' : '') + '</div></div>';
+        }).join("") + '</div>';
+      }
+      let right = "";
+      if (s.chart && s.chart.data && s.chart.data.length) {
+        right += (s.chart.type === "pie" || s.chart.type === "donut") ? renderPie(s.chart) : renderBars(s.chart);
+      }
+      if (s.visual) {
+        right += '<div class="visual"><div class="big">' + iconGlyph(s.visual.icon) + '</div><strong>' + escapeHtml(s.visual.caption || "Visual focus") + '</strong><div style="margin-top:4px;font-size:11px;color:#94a3b8">Illustration panel</div></div>';
+      }
+      const useSplit = layout === "split" || (layout === "chart" && left && right) || (right && left);
       slideView.innerHTML =
         '<div class="eyebrow">Training Presentation</div>' +
         "<h2>" + escapeHtml(s.title || "") + "</h2>" +
-        (bullets ? "<ul>" + bullets + "</ul>" : "") +
-        (s.notes ? '<p class="notes">' + escapeHtml(s.notes) + "</p>" : "");
+        (s.subtitle ? '<p class="subtitle">' + escapeHtml(s.subtitle) + '</p>' : '') +
+        '<div class="grid' + (useSplit ? ' split' : '') + '">' +
+          (left ? '<div>' + left + '</div>' : '') +
+          (right ? '<div>' + right + '</div>' : (!left ? '<div></div>' : '')) +
+        '</div>' +
+        (s.notes ? '<p class="notes"><strong>Trainer note:</strong> ' + escapeHtml(s.notes) + '</p>' : '');
       counter.textContent = "Slide " + (index + 1) + " / " + slides.length;
       prevBtn.disabled = index <= 0;
       nextBtn.disabled = index >= slides.length - 1;

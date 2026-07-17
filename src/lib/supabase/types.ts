@@ -353,6 +353,7 @@ export type TrainingRequest = {
   training_date: string | null;
   session_id: string | null;
   invitation_sent_at: string | null;
+  hidden_from_qi: boolean;
   created_at: string;
   updated_at: string;
 };

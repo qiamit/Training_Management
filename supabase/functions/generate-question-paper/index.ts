@@ -12,6 +12,9 @@ type Body = {
   programmeId?: string;
   extraInstructions?: string;
   matterAssetIds?: string[];
+  documentName?: string;
+  documentMode?: string;
+  documentType?: string;
 };
 
 type Question = {
@@ -213,8 +216,9 @@ Deno.serve(async (req) => {
       "Return ONLY valid JSON with this shape:",
       '{"title":"...","instructions":["..."],"durationMinutes":60,"totalMarks":50,"sections":[{"name":"Section A","questions":[{"number":1,"text":"...","marks":2,"type":"mcq","options":["A","B","C","D"]},{"number":2,"text":"...","marks":3,"type":"clause"},{"number":3,"text":"...","marks":5,"type":"written"}]}]}',
       "Question types: mcq (checkbox options), clause (clause-number write-in), written/short/long (written answer space).",
-      "Follow trainer options for exam duration, language, total marks, question count, difficulty, paper type, and answer format when provided.",
+      "Follow trainer options for exam duration, language, total marks, question count, difficulty, paper type, answer format, document name, mode, and type when provided.",
       "Do NOT include answers. Write the paper in the requested language.",
+      "If a document/paper name is provided, use it as the question paper title.",
     ].join("\n");
 
     const userPrompt = [
@@ -222,6 +226,15 @@ Deno.serve(async (req) => {
       `Category: ${programme.category || "General"}`,
       `Duration hours: ${programme.duration_hours ?? "N/A"}`,
       `Delivery mode: ${programme.delivery_mode || "N/A"}`,
+      body.documentName?.trim()
+        ? `Question paper name: ${body.documentName.trim()}`
+        : "",
+      body.documentMode?.trim()
+        ? `Mode of document: ${body.documentMode.trim()}`
+        : "",
+      body.documentType?.trim()
+        ? `Type of paper: ${body.documentType.trim()}`
+        : "",
       `Programme description:\n${programme.description || "N/A"}`,
       body.extraInstructions?.trim()
         ? `Extra instructions from trainer:\n${body.extraInstructions.trim()}`
@@ -239,7 +252,9 @@ Deno.serve(async (req) => {
       apiKey,
       systemPrompt,
       userPrompt,
-      fallbackTitle: `${programme.title} — Question Paper`,
+      fallbackTitle:
+        body.documentName?.trim() ||
+        `${programme.title} — Question Paper`,
     });
 
     const questionCount = paper.sections.reduce(
@@ -253,10 +268,13 @@ Deno.serve(async (req) => {
     const html = buildQuestionPaperHtml(paper);
     const bytes = new TextEncoder().encode(html);
     const stamp = new Date().toISOString().slice(0, 10);
+    const displayTitle =
+      body.documentName?.trim() || programme.title;
     const safeTopic =
-      programme.title.replace(/[^\w.\-()+ ]+/g, "_").slice(0, 60).trim() ||
+      displayTitle.replace(/[^\w.\-()+ ]+/g, "_").slice(0, 60).trim() ||
       "Training";
-    const fileName = `AI Question Paper - ${safeTopic} - ${stamp}.html`;
+    const modeTag = (body.documentMode || "PDF").replace(/[^\w]+/g, "");
+    const fileName = `AI Question Paper - ${safeTopic} - ${modeTag} - ${stamp}.html`;
     const storagePath =
       `${programmeId}/question_paper/${Date.now()}-ai-question-paper.html`;
 
@@ -286,7 +304,11 @@ Deno.serve(async (req) => {
         file_size: bytes.byteLength,
         mime_type: "text/html",
         uploaded_by: user.id,
-        content_json: paper,
+        content_json: {
+          ...paper,
+          documentMode: body.documentMode || null,
+          documentType: body.documentType || null,
+        },
       })
       .select("*")
       .single();

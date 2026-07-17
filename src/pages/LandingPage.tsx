@@ -25,6 +25,10 @@ function isOngoingTraining(status: string) {
   return value === "in progress" || value === "ongoing";
 }
 
+function isScheduledTraining(status: string) {
+  return normalizeTrainingStatus(status) === "scheduled";
+}
+
 const loginOptions = [
   {
     role: "organization" as const,
@@ -319,7 +323,7 @@ export function LandingPage() {
 
       <div className="grid flex-1 grid-cols-1 overflow-visible xl:min-h-0 xl:grid-cols-[25%_50%_25%] xl:overflow-hidden">
         <aside
-          className="relative flex min-h-0 flex-col overflow-visible border-b border-[color:var(--line)] xl:overflow-hidden xl:border-b-0 xl:border-r"
+          className="relative order-3 flex min-h-0 flex-col overflow-visible border-b border-[color:var(--line)] xl:order-none xl:overflow-hidden xl:border-b-0 xl:border-r"
         >
           <div
             className="absolute inset-0 bg-cover bg-center"
@@ -402,7 +406,7 @@ export function LandingPage() {
           </div>
         </aside>
 
-        <main className="relative flex min-h-0 flex-col overflow-visible xl:overflow-hidden">
+        <main className="relative order-1 flex min-h-0 flex-col overflow-visible xl:order-none xl:overflow-hidden">
           <div
             className="absolute inset-0 bg-cover bg-center"
             style={{
@@ -609,7 +613,7 @@ export function LandingPage() {
 
         <aside
           id="services"
-          className="relative flex min-h-0 flex-col overflow-visible border-t border-[color:var(--line)] xl:overflow-hidden xl:border-l xl:border-t-0"
+          className="relative order-2 flex min-h-0 flex-col overflow-visible border-t border-[color:var(--line)] xl:order-none xl:overflow-hidden xl:border-l xl:border-t-0"
         >
           <div
             className="absolute inset-0 bg-cover bg-center"
@@ -875,6 +879,7 @@ export function LandingPage() {
                     <tbody>
                       {filteredUpcomingRows.map((row) => {
                         const ongoing = isOngoingTraining(row.status);
+                        const scheduled = isScheduledTraining(row.status);
                         return (
                           <tr
                             key={row.training_code}
@@ -903,13 +908,13 @@ export function LandingPage() {
                               </span>
                             </td>
                             <td className="whitespace-nowrap px-3 py-3 text-center">
-                              {ongoing ? (
+                              {ongoing || scheduled ? (
                                 <button
                                   type="button"
                                   onClick={() => setActionTraining(row)}
                                   className="rounded-lg bg-[#1f5f8b] px-3 py-1.5 text-xs font-bold text-white transition hover:bg-[#2874a8]"
                                 >
-                                  Join / Login
+                                  {scheduled ? "Join Training" : "Join / Login"}
                                 </button>
                               ) : (
                                 <span className="text-xs text-[#6f8298]">
@@ -942,49 +947,65 @@ export function LandingPage() {
             className="w-full max-w-md rounded-2xl border border-[#d4a857]/25 bg-[#0f1c2e] p-6 shadow-[0_24px_60px_rgba(0,0,0,0.5)]"
             onClick={(event) => event.stopPropagation()}
           >
-            <h2
-              id="training-login-choice-title"
-              className="landing-display text-lg font-bold text-[#f0d49a]"
-            >
-              Continue as
-            </h2>
-            <p className="mt-2 text-sm leading-6 text-[#a9bdd4]">
-              Do you want to open Login / Signup as an Organization or as an
-              Individual for{" "}
-              <span className="font-semibold text-[#f0d9a0]">
-                {actionTraining.programme_title || actionTraining.title}
-              </span>
-              ?
-            </p>
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <Link
-                to="/login/organization"
-                onClick={() => {
-                  setActionTraining(null);
-                  setUpcomingOpen(false);
-                }}
-                className="inline-flex items-center justify-center rounded-xl bg-[#1f5f8b] px-4 py-3 text-sm font-bold text-white transition hover:bg-[#2874a8]"
-              >
-                Organization
-              </Link>
-              <Link
-                to="/login/individual"
-                onClick={() => {
-                  setActionTraining(null);
-                  setUpcomingOpen(false);
-                }}
-                className="inline-flex items-center justify-center rounded-xl border border-[#d4a857]/35 bg-[#d4a857]/12 px-4 py-3 text-sm font-bold text-[#f0d9a0] transition hover:border-[#d4a857]/55 hover:bg-[#d4a857]/20"
-              >
-                Individual
-              </Link>
-            </div>
-            <button
-              type="button"
-              onClick={() => setActionTraining(null)}
-              className="mt-4 w-full rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold text-[#a9bdd4] transition hover:bg-white/[0.04]"
-            >
-              Cancel
-            </button>
+            {(() => {
+              const scheduled = isScheduledTraining(actionTraining.status);
+              const orgPath = scheduled
+                ? "/login/organization?mode=signup"
+                : "/login/organization";
+              const individualPath = scheduled
+                ? "/login/individual?mode=signup"
+                : "/login/individual";
+              return (
+                <>
+                  <h2
+                    id="training-login-choice-title"
+                    className="landing-display text-lg font-bold text-[#f0d49a]"
+                  >
+                    {scheduled ? "Join Training as" : "Continue as"}
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 text-[#a9bdd4]">
+                    {scheduled
+                      ? "Open Organization or Individual Signup for "
+                      : "Do you want to open Login / Signup as an Organization or as an Individual for "}
+                    <span className="font-semibold text-[#f0d9a0]">
+                      {actionTraining.programme_title || actionTraining.title}
+                    </span>
+                    ?
+                  </p>
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                    <Link
+                      to={orgPath}
+                      onClick={() => {
+                        setActionTraining(null);
+                        setUpcomingOpen(false);
+                      }}
+                      className="inline-flex items-center justify-center rounded-xl bg-[#1f5f8b] px-4 py-3 text-sm font-bold text-white transition hover:bg-[#2874a8]"
+                    >
+                      Organization
+                      {scheduled ? " Signup" : ""}
+                    </Link>
+                    <Link
+                      to={individualPath}
+                      onClick={() => {
+                        setActionTraining(null);
+                        setUpcomingOpen(false);
+                      }}
+                      className="inline-flex items-center justify-center rounded-xl border border-[#d4a857]/35 bg-[#d4a857]/12 px-4 py-3 text-sm font-bold text-[#f0d9a0] transition hover:border-[#d4a857]/55 hover:bg-[#d4a857]/20"
+                    >
+                      Individual
+                      {scheduled ? " Signup" : ""}
+                    </Link>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActionTraining(null)}
+                    className="mt-4 w-full rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold text-[#a9bdd4] transition hover:bg-white/[0.04]"
+                  >
+                    Cancel
+                  </button>
+                </>
+              );
+            })()}
           </div>
         </div>
       ) : null}

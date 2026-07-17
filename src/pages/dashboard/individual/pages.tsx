@@ -6,6 +6,7 @@ import {
   Panel,
   StatCard,
 } from "@/components/dashboard-shell";
+import { TrainerProfileModal } from "@/components/trainer-profile-modal";
 import { useWorkspaceScopedProfile as useAuth, useWorkspaceReadOnly } from "@/features/workspace/WorkspacePreview";
 import { isOrgLearnerRole } from "@/lib/auth/roles";
 import {
@@ -1017,6 +1018,7 @@ type AssignedRow = {
   meeting_platform: string | null;
   meeting_link: string | null;
   meeting_password: string | null;
+  trainerId: string | null;
   requestId: string | null;
   sessionId: string | null;
   invitations: InviteNotice[];
@@ -1044,6 +1046,7 @@ export function IndividualAssignedTrainingsPage() {
   const [rows, setRows] = useState<AssignedRow[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [viewInvites, setViewInvites] = useState<InviteNotice[] | null>(null);
+  const [viewTrainerId, setViewTrainerId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!profile) return;
@@ -1176,6 +1179,7 @@ export function IndividualAssignedTrainingsPage() {
           meeting_platform: session?.meeting_platform ?? null,
           meeting_link: session?.meeting_link ?? null,
           meeting_password: session?.meeting_password ?? null,
+          trainerId: session?.trainer_id ?? linkedRequest?.trainer_id ?? null,
           requestId: linkedRequest?.id ?? null,
           sessionId: e.session_id,
           invitations: [],
@@ -1210,6 +1214,7 @@ export function IndividualAssignedTrainingsPage() {
           meeting_platform: session?.meeting_platform ?? null,
           meeting_link: session?.meeting_link ?? null,
           meeting_password: session?.meeting_password ?? null,
+          trainerId: session?.trainer_id ?? r.trainer_id ?? null,
           requestId: r.id,
           sessionId: r.session_id,
           invitations: [],
@@ -1227,6 +1232,7 @@ export function IndividualAssignedTrainingsPage() {
           meeting_platform: null,
           meeting_link: null,
           meeting_password: null,
+          trainerId: null,
           requestId: null,
           sessionId: null,
           invitations: [],
@@ -1407,6 +1413,9 @@ export function IndividualAssignedTrainingsPage() {
                     Status
                   </th>
                   <th className="border border-slate-200 px-3 py-2.5 text-center">
+                    Trainer
+                  </th>
+                  <th className="border border-slate-200 px-3 py-2.5 text-center">
                     Join
                   </th>
                   <th className="min-w-[220px] border border-slate-200 px-3 py-2.5 text-center">
@@ -1441,6 +1450,19 @@ export function IndividualAssignedTrainingsPage() {
                       </td>
                       <td className="border border-slate-200 px-3 py-2.5 text-center capitalize text-slate-700">
                         {r.status}
+                      </td>
+                      <td className="border border-slate-200 px-3 py-2.5 text-center">
+                        {r.trainerId ? (
+                          <button
+                            type="button"
+                            onClick={() => setViewTrainerId(r.trainerId)}
+                            className="rounded-lg border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+                          >
+                            View Profile
+                          </button>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
                       </td>
                       <td className="border border-slate-200 px-3 py-2.5 text-center">
                         {(() => {
@@ -1596,6 +1618,11 @@ export function IndividualAssignedTrainingsPage() {
           </div>
         </div>
       ) : null}
+
+      <TrainerProfileModal
+        trainerId={viewTrainerId}
+        onClose={() => setViewTrainerId(null)}
+      />
     </div>
   );
 }

@@ -5,6 +5,7 @@ import {
   Panel,
   StatCard,
 } from "@/components/dashboard-shell";
+import { TrainerProfileModal } from "@/components/trainer-profile-modal";
 import { useWorkspaceScopedProfile as useAuth, useIsWorkspacePreview, useWorkspaceReadOnly } from "@/features/workspace/WorkspacePreview";
 import {
   externalMeetingHref,
@@ -2567,9 +2568,11 @@ export function OrgAssignedTrainingsPage() {
       meeting_password: string | null;
       location: string | null;
       status: string;
+      trainer_id: string | null;
     }>
   >([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [viewTrainerId, setViewTrainerId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!profile?.org_id) return;
@@ -2623,6 +2626,7 @@ export function OrgAssignedTrainingsPage() {
         meeting_password: string | null;
         location: string | null;
         status: string;
+        trainer_id: string | null;
       }> = [];
 
       for (const r of requestList) {
@@ -2641,6 +2645,7 @@ export function OrgAssignedTrainingsPage() {
           meeting_password: linked?.meeting_password ?? null,
           location: linked?.location ?? null,
           status: r.status,
+          trainer_id: linked?.trainer_id ?? r.trainer_id ?? null,
         });
       }
 
@@ -2655,6 +2660,7 @@ export function OrgAssignedTrainingsPage() {
           meeting_password: s.meeting_password ?? null,
           location: s.location,
           status: s.status,
+          trainer_id: s.trainer_id ?? null,
         });
       }
 
@@ -2724,6 +2730,9 @@ export function OrgAssignedTrainingsPage() {
                     Status
                   </th>
                   <th className="border border-slate-200 px-3 py-2.5 text-center">
+                    Trainer
+                  </th>
+                  <th className="border border-slate-200 px-3 py-2.5 text-center">
                     Join
                   </th>
                 </tr>
@@ -2753,6 +2762,19 @@ export function OrgAssignedTrainingsPage() {
                     </td>
                     <td className="border border-slate-200 px-3 py-2.5 text-center capitalize text-slate-700">
                       {s.status}
+                    </td>
+                    <td className="border border-slate-200 px-3 py-2.5 text-center">
+                      {s.trainer_id ? (
+                        <button
+                          type="button"
+                          onClick={() => setViewTrainerId(s.trainer_id)}
+                          className="rounded-lg border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+                        >
+                          View Profile
+                        </button>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
                     </td>
                     <td className="border border-slate-200 px-3 py-2.5 text-center">
                       {(() => {
@@ -2789,6 +2811,11 @@ export function OrgAssignedTrainingsPage() {
           </div>
         </Panel>
       )}
+
+      <TrainerProfileModal
+        trainerId={viewTrainerId}
+        onClose={() => setViewTrainerId(null)}
+      />
     </div>
   );
 }

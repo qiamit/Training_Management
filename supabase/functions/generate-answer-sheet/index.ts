@@ -13,6 +13,9 @@ type Body = {
   extraInstructions?: string;
   matterAssetIds?: string[];
   questionPaperAssetId?: string;
+  documentName?: string;
+  documentMode?: string;
+  documentType?: string;
 };
 
 type AnswerItem = {
@@ -279,10 +282,11 @@ Deno.serve(async (req) => {
       "Create a professional training answer sheet / model answer key.",
       "Return ONLY valid JSON with this shape:",
       '{"title":"...","notes":["For examiner use only"],"totalMarks":50,"answers":[{"number":1,"question":"...","marks":2,"type":"mcq","answer":"...","markingPoints":["..."]}]}',
-      "Follow trainer options for language, total marks, question count, and difficulty when provided.",
+      "Follow trainer options for language, total marks, question count, difficulty, document name, mode, and type when provided.",
       "If an existing question paper is provided, answer those questions in order.",
       "For MCQ include the correct option clearly. For short/long answers give a complete model answer plus marking points.",
       "Write everything in the requested language.",
+      "If a document/sheet name is provided, use it as the answer sheet title.",
     ].join("\n");
 
     const userPrompt = [
@@ -290,6 +294,15 @@ Deno.serve(async (req) => {
       `Category: ${programme.category || "General"}`,
       `Duration hours: ${programme.duration_hours ?? "N/A"}`,
       `Delivery mode: ${programme.delivery_mode || "N/A"}`,
+      body.documentName?.trim()
+        ? `Answer sheet name: ${body.documentName.trim()}`
+        : "",
+      body.documentMode?.trim()
+        ? `Mode of document: ${body.documentMode.trim()}`
+        : "",
+      body.documentType?.trim()
+        ? `Type of answer sheet: ${body.documentType.trim()}`
+        : "",
       `Programme description:\n${programme.description || "N/A"}`,
       body.extraInstructions?.trim()
         ? `Extra instructions from trainer:\n${body.extraInstructions.trim()}`
@@ -310,7 +323,9 @@ Deno.serve(async (req) => {
       apiKey,
       systemPrompt,
       userPrompt,
-      fallbackTitle: `${programme.title} — Answer Sheet`,
+      fallbackTitle:
+        body.documentName?.trim() ||
+        `${programme.title} — Answer Sheet`,
     });
 
     if (!sheet.answers.length) {
@@ -320,10 +335,13 @@ Deno.serve(async (req) => {
     const html = buildAnswerSheetHtml(sheet);
     const bytes = new TextEncoder().encode(html);
     const stamp = new Date().toISOString().slice(0, 10);
+    const displayTitle =
+      body.documentName?.trim() || programme.title;
     const safeTopic =
-      programme.title.replace(/[^\w.\-()+ ]+/g, "_").slice(0, 60).trim() ||
+      displayTitle.replace(/[^\w.\-()+ ]+/g, "_").slice(0, 60).trim() ||
       "Training";
-    const fileName = `AI Answer Sheet - ${safeTopic} - ${stamp}.html`;
+    const modeTag = (body.documentMode || "PDF").replace(/[^\w]+/g, "");
+    const fileName = `AI Answer Sheet - ${safeTopic} - ${modeTag} - ${stamp}.html`;
     const storagePath =
       `${programmeId}/answer_sheet/${Date.now()}-ai-answer-sheet.html`;
 
@@ -353,6 +371,11 @@ Deno.serve(async (req) => {
         file_size: bytes.byteLength,
         mime_type: "text/html",
         uploaded_by: user.id,
+        content_json: {
+          ...sheet,
+          documentMode: body.documentMode || null,
+          documentType: body.documentType || null,
+        },
       })
       .select("*")
       .single();

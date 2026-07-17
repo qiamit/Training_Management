@@ -433,7 +433,6 @@ export function DashboardShell({
                 sidebarOpen ? "justify-between" : "justify-center"
               }`}
             >
-              <SidebarToggleButton />
               {sidebarOpen ? (
                 brand ? (
                   <div className="flex min-w-0 flex-1 justify-center">
@@ -450,6 +449,7 @@ export function DashboardShell({
                   </div>
                 )
               ) : null}
+              <SidebarToggleButton />
             </div>
           </div>
 
@@ -658,7 +658,7 @@ export function DashboardShell({
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <header className="shrink-0 border-b border-slate-200/80 bg-[#eef2f6]/95 px-3 py-3 backdrop-blur sm:px-6 sm:py-3.5 lg:px-8">
-            <div className="relative flex items-center justify-between gap-2 lg:justify-center">
+            <div className="relative flex items-center justify-between gap-2 lg:justify-start">
               <div className="flex min-w-0 items-center gap-2 sm:gap-3 lg:hidden">
                 <button
                   type="button"
@@ -691,8 +691,8 @@ export function DashboardShell({
                 )}
               </div>
 
-              <div className="hidden min-w-0 max-w-[min(90%,56rem)] px-12 lg:block">
-                <div className="text-center">
+              <div className="hidden min-w-0 max-w-[min(90%,56rem)] lg:block">
+                <div className="text-left">
                   <p
                     className={`bg-gradient-to-r bg-clip-text text-xl font-bold tracking-tight text-transparent xl:text-2xl 2xl:text-3xl ${
                       portalAccent === "emerald"

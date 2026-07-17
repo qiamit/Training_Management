@@ -44,6 +44,11 @@ textarea {
   font: inherit;
 }
 
+button[aria-label="Close"] {
+  font-size: 2rem !important;
+  line-height: 1 !important;
+}
+
 input,
 select,
 textarea {

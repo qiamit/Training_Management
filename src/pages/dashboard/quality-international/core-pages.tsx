@@ -17,6 +17,7 @@ import type {
   Invoice,
   Organization,
   Profile,
+  ProgrammeTrainingAsset,
   TrainingParticipantPayment,
   TrainingParticipantPaymentStatus,
   TrainingProgramme,
@@ -1334,6 +1335,17 @@ export function QiAssignProgrammesPage() {
   const { profile: qiProfile, isTrainerView } = useAuth();
   const isSuperAdmin = qiProfile?.role === "super_admin";
   const filterMenuRef = useRef<HTMLDivElement>(null);
+  const [confirmDeleteRow, setConfirmDeleteRow] =
+    useState<ApprovedRequestRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [matterProgramme, setMatterProgramme] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
+  const [matterAssets, setMatterAssets] = useState<ProgrammeTrainingAsset[]>(
+    [],
+  );
+  const [matterLoading, setMatterLoading] = useState(false);
   const [orgs, setOrgs] = useState<Organization[]>([]);
   const [programmes, setProgrammes] = useState<TrainingProgramme[]>([]);
   const [trainers, setTrainers] = useState<Profile[]>([]);
@@ -1435,6 +1447,7 @@ export function QiAssignProgrammesPage() {
     let requestsQuery = supabase
       .from("training_requests")
       .select("*")
+      .eq("hidden_from_qi", false)
       .in("status", ["approved", "hold", "scheduled", "completed"])
       .order("updated_at", { ascending: false });
 
@@ -2843,27 +2856,42 @@ export function QiAssignProgrammesPage() {
     };
   }, [filterOpen]);
 
-  async function deleteAssignedTraining(row: ApprovedRequestRow) {
-    const ok = window.confirm(
-      `Delete assigned training "${row.programme_title}"? This cannot be undone.`,
-    );
-    if (!ok) return;
+  async function openTrainerMatter(row: ApprovedRequestRow) {
+    if (!row.programme_id) return;
+    setMatterProgramme({ id: row.programme_id, title: row.programme_title });
+    setMatterAssets([]);
+    setMatterLoading(true);
+    try {
+      const { data } = await supabase
+        .from("programme_training_assets")
+        .select("*")
+        .eq("programme_id", row.programme_id)
+        .order("created_at", { ascending: false });
+      setMatterAssets((data ?? []) as ProgrammeTrainingAsset[]);
+    } finally {
+      setMatterLoading(false);
+    }
+  }
+
+  async function confirmDeleteAssignedTraining() {
+    if (!confirmDeleteRow) return;
     setError(null);
     setMessage(null);
-    setRowBusyId(row.id);
+    setDeleting(true);
     try {
       const { error: delError } = await supabase
         .from("training_requests")
         .delete()
-        .eq("id", row.id);
+        .eq("id", confirmDeleteRow.id);
       if (delError) {
         setError(delError.message);
         return;
       }
+      setConfirmDeleteRow(null);
       setMessage("Assigned training deleted.");
       await load();
     } finally {
-      setRowBusyId(null);
+      setDeleting(false);
     }
   }
 
@@ -3103,7 +3131,7 @@ export function QiAssignProgrammesPage() {
                     Participants
                   </th>
                   <th className="border border-slate-200 px-3 py-2.5 text-center">
-                    Trainer
+                    {isTrainerView ? "Training Matter" : "Trainer"}
                   </th>
                   <th className="border border-slate-200 px-3 py-2.5 text-center">
                     Date of Training
@@ -3163,12 +3191,17 @@ export function QiAssignProgrammesPage() {
                       </td>
                       <td className="border border-slate-200 px-3 py-2.5 text-center">
                         {isTrainerView ? (
-                          <span className="text-xs font-semibold text-slate-700">
-                            {row.trainer_name ||
-                              qiProfile?.full_name?.trim() ||
-                              qiProfile?.email ||
-                              "You"}
-                          </span>
+                          row.programme_id ? (
+                            <button
+                              type="button"
+                              onClick={() => void openTrainerMatter(row)}
+                              className="rounded-lg border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+                            >
+                              View Matter
+                            </button>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )
                         ) : (
                           <select
                             disabled={busy}
@@ -3205,14 +3238,18 @@ export function QiAssignProgrammesPage() {
                         <select
                           disabled={busy}
                           value={scheduleStatus}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            if (e.target.value === "__delete__") {
+                              setConfirmDeleteRow(row);
+                              return;
+                            }
                             void updateRequestSchedule(row, {
                               status: e.target.value as
                                 | "hold"
                                 | "scheduled"
                                 | "completed",
-                            })
-                          }
+                            });
+                          }}
                           aria-label={`Status for ${row.programme_title}`}
                           className={`rounded-lg border px-2 py-1.5 text-xs font-semibold capitalize ${
                             scheduleStatus === "completed"
@@ -3225,6 +3262,9 @@ export function QiAssignProgrammesPage() {
                           <option value="hold">Hold</option>
                           <option value="scheduled">Scheduled</option>
                           <option value="completed">Completed</option>
+                          {isSuperAdmin ? (
+                            <option value="__delete__">Delete</option>
+                          ) : null}
                         </select>
                       </td>
                       <td className="border border-slate-200 px-3 py-2.5 text-center">
@@ -3266,18 +3306,6 @@ export function QiAssignProgrammesPage() {
                                 : "Send Invitation"}
                             </button>
                           )}
-                          {isSuperAdmin ? (
-                            <button
-                              type="button"
-                              disabled={busy}
-                              title="Delete assigned training"
-                              aria-label={`Delete ${row.programme_title}`}
-                              onClick={() => void deleteAssignedTraining(row)}
-                              className="rounded-md px-1.5 py-0.5 text-base leading-none hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              🗑️
-                            </button>
-                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -4477,6 +4505,148 @@ export function QiAssignProgrammesPage() {
               >
                 Confirm ({pickerDraftIds.length})
               </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {confirmDeleteRow ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-delete-assigned-title"
+        >
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+            <div className="mb-3 flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-100 text-lg text-rose-600">
+                🗑️
+              </div>
+              <div>
+                <h2
+                  id="confirm-delete-assigned-title"
+                  className="text-lg font-semibold text-slate-900"
+                >
+                  Delete assigned training?
+                </h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  "{confirmDeleteRow.programme_title}" will be permanently
+                  removed. This cannot be undone.
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => setConfirmDeleteRow(null)}
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => void confirmDeleteAssignedTraining()}
+                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {deleting ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {matterProgramme ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="trainer-matter-title"
+        >
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="relative bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 px-5 py-5">
+              <button
+                type="button"
+                className="absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-lg text-2xl leading-none text-white/80 transition hover:bg-white/15 hover:text-white"
+                onClick={() => {
+                  setMatterProgramme(null);
+                  setMatterAssets([]);
+                }}
+                title="Close"
+                aria-label="Close"
+              >
+                ×
+              </button>
+              <h2
+                id="trainer-matter-title"
+                className="pr-10 text-lg font-bold text-white"
+              >
+                Training Matter
+              </h2>
+              <p className="mt-0.5 text-xs font-medium text-indigo-100">
+                {matterProgramme.title}
+              </p>
+            </div>
+
+            <div className="max-h-[calc(90vh-96px)] overflow-y-auto p-5">
+              {matterLoading ? (
+                <p className="py-8 text-center text-sm text-slate-500">
+                  Loading training matter…
+                </p>
+              ) : matterAssets.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+                  No training matter uploaded for this programme yet.
+                </p>
+              ) : (
+                <div className="space-y-5">
+                  {(
+                    [
+                      { category: "matter_files", label: "Matter Files" },
+                      { category: "presentation", label: "Presentation" },
+                      { category: "question_paper", label: "Question Paper" },
+                      { category: "answer_sheet", label: "Answer Sheet" },
+                    ] as const
+                  ).map((group) => {
+                    const items = matterAssets.filter(
+                      (a) => a.category === group.category,
+                    );
+                    if (items.length === 0) return null;
+                    return (
+                      <div key={group.category}>
+                        <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+                          {group.label}
+                        </h3>
+                        <div className="space-y-2">
+                          {items.map((asset) => (
+                            <div
+                              key={asset.id}
+                              className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2"
+                            >
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium text-slate-900">
+                                  {asset.file_name}
+                                </p>
+                                <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                                  {asset.source_type}
+                                </p>
+                              </div>
+                              <a
+                                href={asset.file_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="shrink-0 rounded-lg border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+                              >
+                                Open
+                              </a>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </div>

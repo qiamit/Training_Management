@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   EmptyState,
   PageHeader,
   Panel,
+  StatCard,
 } from "@/components/dashboard-shell";
 import { PresentationAiPreview } from "@/components/PresentationAiPreview";
 import { useAuth } from "@/features/auth/AuthProvider";
@@ -183,6 +184,10 @@ export function QiProgrammesPage() {
   >([]);
   const [previewAsset, setPreviewAsset] =
     useState<ProgrammeTrainingAsset | null>(null);
+  const [renamingAsset, setRenamingAsset] =
+    useState<ProgrammeTrainingAsset | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [savingRename, setSavingRename] = useState(false);
   const [uploadingMatterFile, setUploadingMatterFile] = useState(false);
   const [showAddSources, setShowAddSources] = useState(false);
   const [sourceMode, setSourceMode] = useState<
@@ -195,6 +200,9 @@ export function QiProgrammesPage() {
   const [showAiAssistant, setShowAiAssistant] = useState(false);
   const [generatingAiAsset, setGeneratingAiAsset] = useState(false);
   const emptyAiForm = {
+    documentName: "",
+    documentMode: "PPT",
+    documentType: "Informative",
     sessionTime: "2 hours",
     language: "English",
     pages: "10-12",
@@ -479,6 +487,8 @@ export function QiProgrammesPage() {
   function openTrainingMatter(p: TrainingProgramme) {
     setError(null);
     setPreviewAsset(null);
+    setRenamingAsset(null);
+    setRenameValue("");
     setSelectedMatterAssetIds([]);
     const next = new URLSearchParams(searchParams);
     next.set("matter", p.id);
@@ -495,6 +505,8 @@ export function QiProgrammesPage() {
     setMatterAssets([]);
     setSelectedMatterAssetIds([]);
     setPreviewAsset(null);
+    setRenamingAsset(null);
+    setRenameValue("");
     setShowAiAssistant(false);
     setShowAiFilePicker(false);
     setAiForm(emptyAiForm);
@@ -522,6 +534,8 @@ export function QiProgrammesPage() {
     );
     setAiForm({
       ...emptyAiForm,
+      documentMode:
+        matterTab === "presentation" ? "PPT" : "PDF",
       questionPaperAssetId: questionPapers[0]?.id ?? "",
     });
     setShowAiFilePicker(false);
@@ -544,9 +558,56 @@ export function QiProgrammesPage() {
     setAiSelectedSourceIds(allSelected ? [] : ids);
   }
 
+  function documentModeInstruction(mode: string) {
+    switch (mode) {
+      case "PDF":
+        return "Target format: PDF — structure content for a clean printable PDF document layout.";
+      case "Word":
+        return "Target format: Word — structure as a formal Word document with headings, paragraphs, and clear sections.";
+      case "Excel":
+        return "Target format: Excel — structure content in a tabular / worksheet-friendly way (sections, rows, columns where useful).";
+      case "PPT":
+      default:
+        return "Target format: PPT — structure as a PowerPoint-style slide deck with clear slide titles and bullet points.";
+    }
+  }
+
+  function documentTypeInstruction(docType: string) {
+    switch (docType) {
+      case "Technical":
+        return "Content type: Technical — emphasize standards, procedures, clauses, and precise terminology.";
+      case "Awareness":
+        return "Content type: Awareness — focus on key messages, risks, dos & don'ts, and easy takeaways.";
+      case "Case Study":
+        return "Content type: Case Study — include scenarios, examples, and practical application questions/points.";
+      case "Compliance":
+        return "Content type: Compliance — stress policy requirements, audit readiness, and mandatory checks.";
+      case "General":
+        return "Content type: General — balanced overview suitable for a mixed audience.";
+      case "Informative":
+      default:
+        return "Content type: Informative — clear explanations, learning points, and structured knowledge transfer.";
+    }
+  }
+
   function buildAiExtraInstructions() {
+    const nameLine = aiForm.documentName.trim()
+      ? `Document / presentation name: ${aiForm.documentName.trim()}`
+      : "";
+    const modeLines = [
+      `Mode of presentation / document: ${aiForm.documentMode}`,
+      documentModeInstruction(aiForm.documentMode),
+    ];
+    const typeLines = [
+      `Type of presentation / document: ${aiForm.documentType}`,
+      documentTypeInstruction(aiForm.documentType),
+    ];
+
     if (matterTab === "presentation") {
       return [
+        nameLine,
+        ...modeLines,
+        ...typeLines,
         `Session time: ${aiForm.sessionTime}`,
         `Presentation language: ${aiForm.language}`,
         `Number of presentation pages/slides: ${aiForm.pages}`,
@@ -566,6 +627,9 @@ export function QiProgrammesPage() {
           a.id === aiForm.questionPaperAssetId,
       );
       return [
+        nameLine,
+        ...modeLines,
+        ...typeLines,
         `Answer sheet language: ${aiForm.language}`,
         `Total marks: ${aiForm.totalMarks}`,
         `Number of questions/answers: ${aiForm.questionCount}`,
@@ -582,6 +646,9 @@ export function QiProgrammesPage() {
         .join("\n");
     }
     return [
+      nameLine,
+      ...modeLines,
+      ...typeLines,
       `Exam duration: ${aiForm.examDuration}`,
       `Question paper language: ${aiForm.language}`,
       `Total marks: ${aiForm.totalMarks}`,
@@ -672,6 +739,9 @@ export function QiProgrammesPage() {
         programmeId: matterProgramme.id,
         extraInstructions: buildAiExtraInstructions(),
         matterAssetIds: matterFileIds,
+        documentName: aiForm.documentName.trim() || undefined,
+        documentMode: aiForm.documentMode,
+        documentType: aiForm.documentType,
         ...(matterTab === "answer_sheet" && aiForm.questionPaperAssetId
           ? { questionPaperAssetId: aiForm.questionPaperAssetId }
           : {}),
@@ -892,7 +962,71 @@ export function QiProgrammesPage() {
       return;
     }
     if (previewAsset?.id === asset.id) setPreviewAsset(null);
+    if (renamingAsset?.id === asset.id) {
+      setRenamingAsset(null);
+      setRenameValue("");
+    }
     await loadMatterAssets(asset.programme_id);
+  }
+
+  function openRenameMatterAsset(asset: ProgrammeTrainingAsset) {
+    setError(null);
+    setMessage(null);
+    setRenamingAsset(asset);
+    setRenameValue(asset.file_name);
+  }
+
+  function buildRenamedFileName(oldName: string, nextName: string) {
+    const trimmed = nextName.trim().replace(/\s+/g, " ");
+    if (!trimmed) return "";
+    const lastDot = oldName.lastIndexOf(".");
+    if (lastDot <= 0 || lastDot === oldName.length - 1) return trimmed;
+    const ext = oldName.slice(lastDot);
+    if (trimmed.toLowerCase().endsWith(ext.toLowerCase())) return trimmed;
+    // Keep original extension when user enters a display name without one
+    if (!/\.[a-z0-9]{1,10}$/i.test(trimmed)) return `${trimmed}${ext}`;
+    return trimmed;
+  }
+
+  async function saveRenameMatterAsset() {
+    if (!renamingAsset) return;
+    const nextName = buildRenamedFileName(
+      renamingAsset.file_name,
+      renameValue,
+    );
+    if (!nextName) {
+      setError("Source name is required.");
+      return;
+    }
+    if (nextName === renamingAsset.file_name) {
+      setRenamingAsset(null);
+      setRenameValue("");
+      return;
+    }
+    setSavingRename(true);
+    setError(null);
+    const { data, error: updateError } = await supabase
+      .from("programme_training_assets")
+      .update({ file_name: nextName })
+      .eq("id", renamingAsset.id)
+      .select("*")
+      .maybeSingle();
+    setSavingRename(false);
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+    if (!data) {
+      setError("Could not rename source. Please try again.");
+      return;
+    }
+    setMatterAssets((prev) =>
+      prev.map((a) => (a.id === data.id ? data : a)),
+    );
+    if (previewAsset?.id === data.id) setPreviewAsset(data);
+    setRenamingAsset(null);
+    setRenameValue("");
+    setMessage("Source renamed.");
   }
 
   function getAssetSourceType(
@@ -1483,6 +1617,62 @@ export function QiProgrammesPage() {
 
                     {matterTab === "presentation" ? (
                       <div className="grid gap-3 sm:grid-cols-2">
+                        <label className="text-xs font-semibold text-slate-600 sm:col-span-2">
+                          Presentation Name
+                          <input
+                            type="text"
+                            value={aiForm.documentName}
+                            onChange={(e) =>
+                              setAiForm({
+                                ...aiForm,
+                                documentName: e.target.value,
+                              })
+                            }
+                            placeholder="e.g. ISO 9001 Awareness Deck"
+                            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal text-slate-900"
+                          />
+                        </label>
+
+                        <label className="text-xs font-semibold text-slate-600">
+                          Mode of Presentation
+                          <select
+                            value={aiForm.documentMode}
+                            onChange={(e) =>
+                              setAiForm({
+                                ...aiForm,
+                                documentMode: e.target.value,
+                              })
+                            }
+                            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal text-slate-900"
+                          >
+                            <option value="PPT">PPT</option>
+                            <option value="PDF">PDF</option>
+                            <option value="Word">Word</option>
+                            <option value="Excel">Excel</option>
+                          </select>
+                        </label>
+
+                        <label className="text-xs font-semibold text-slate-600">
+                          Type of Presentation
+                          <select
+                            value={aiForm.documentType}
+                            onChange={(e) =>
+                              setAiForm({
+                                ...aiForm,
+                                documentType: e.target.value,
+                              })
+                            }
+                            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal text-slate-900"
+                          >
+                            <option value="Informative">Informative</option>
+                            <option value="General">General</option>
+                            <option value="Technical">Technical</option>
+                            <option value="Awareness">Awareness</option>
+                            <option value="Case Study">Case Study</option>
+                            <option value="Compliance">Compliance</option>
+                          </select>
+                        </label>
+
                         <label className="text-xs font-semibold text-slate-600">
                           Session Time
                           <select
@@ -1590,6 +1780,70 @@ export function QiProgrammesPage() {
                       </div>
                     ) : (
                       <div className="grid gap-3 sm:grid-cols-2">
+                        <label className="text-xs font-semibold text-slate-600 sm:col-span-2">
+                          {matterTab === "answer_sheet"
+                            ? "Answer Sheet Name"
+                            : "Question Paper Name"}
+                          <input
+                            type="text"
+                            value={aiForm.documentName}
+                            onChange={(e) =>
+                              setAiForm({
+                                ...aiForm,
+                                documentName: e.target.value,
+                              })
+                            }
+                            placeholder={
+                              matterTab === "answer_sheet"
+                                ? "e.g. ISO 9001 Final Exam — Answer Key"
+                                : "e.g. ISO 9001 Final Exam Paper"
+                            }
+                            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal text-slate-900"
+                          />
+                        </label>
+
+                        <label className="text-xs font-semibold text-slate-600">
+                          Mode of Document
+                          <select
+                            value={aiForm.documentMode}
+                            onChange={(e) =>
+                              setAiForm({
+                                ...aiForm,
+                                documentMode: e.target.value,
+                              })
+                            }
+                            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal text-slate-900"
+                          >
+                            <option value="PPT">PPT</option>
+                            <option value="PDF">PDF</option>
+                            <option value="Word">Word</option>
+                            <option value="Excel">Excel</option>
+                          </select>
+                        </label>
+
+                        <label className="text-xs font-semibold text-slate-600">
+                          {matterTab === "answer_sheet"
+                            ? "Type of Answer Sheet"
+                            : "Type of Paper"}
+                          <select
+                            value={aiForm.documentType}
+                            onChange={(e) =>
+                              setAiForm({
+                                ...aiForm,
+                                documentType: e.target.value,
+                              })
+                            }
+                            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal text-slate-900"
+                          >
+                            <option value="Informative">Informative</option>
+                            <option value="General">General</option>
+                            <option value="Technical">Technical</option>
+                            <option value="Awareness">Awareness</option>
+                            <option value="Case Study">Case Study</option>
+                            <option value="Compliance">Compliance</option>
+                          </select>
+                        </label>
+
                         {matterTab === "answer_sheet" ? (
                           <label className="text-xs font-semibold text-slate-600 sm:col-span-2">
                             Question Paper *
@@ -1873,17 +2127,6 @@ export function QiProgrammesPage() {
                       <button
                         type="button"
                         disabled={generatingAiAsset}
-                        onClick={() => {
-                          setShowAiAssistant(false);
-                          setShowAiFilePicker(false);
-                        }}
-                        className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-2xl leading-none text-slate-600 hover:bg-slate-50 disabled:opacity-60"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        disabled={generatingAiAsset}
                         onClick={() => void generateAiAsset()}
                         className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
                       >
@@ -1894,6 +2137,73 @@ export function QiProgrammesPage() {
                               ? "Creating answer sheet…"
                               : "Creating question paper…"
                           : "Generate with AI"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {renamingAsset ? (
+                <div
+                  className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/50 p-4"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="rename-source-title"
+                >
+                  <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+                    <div className="mb-4 flex items-start justify-between gap-3">
+                      <h2
+                        id="rename-source-title"
+                        className="text-lg font-semibold text-slate-900"
+                      >
+                        Rename Source
+                      </h2>
+                      <button
+                        type="button"
+                        className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-2xl leading-none text-slate-500 hover:bg-slate-100"
+                        disabled={savingRename}
+                        onClick={() => {
+                          setRenamingAsset(null);
+                          setRenameValue("");
+                        }}
+                        title="Close"
+                        aria-label="Close"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    {error ? (
+                      <p className="mb-3 text-sm text-red-600">{error}</p>
+                    ) : null}
+                    <label className="block text-xs font-semibold text-slate-600">
+                      Source name
+                      <input
+                        type="text"
+                        value={renameValue}
+                        disabled={savingRename}
+                        autoFocus
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            void saveRenameMatterAsset();
+                          }
+                        }}
+                        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal text-slate-900"
+                        placeholder="Enter new name"
+                      />
+                    </label>
+                    <p className="mt-2 text-[11px] text-slate-500">
+                      Current: {renamingAsset.file_name}
+                    </p>
+                    <div className="mt-5 flex justify-end gap-2">
+                      <button
+                        type="button"
+                        disabled={savingRename}
+                        onClick={() => void saveRenameMatterAsset()}
+                        className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+                      >
+                        {savingRename ? "Saving…" : "Save name"}
                       </button>
                     </div>
                   </div>
@@ -2015,6 +2325,15 @@ export function QiProgrammesPage() {
                                 >
                                   🔗
                                 </a>
+                                <button
+                                  type="button"
+                                  title="Rename"
+                                  aria-label="Rename"
+                                  className="rounded-md px-1.5 py-0.5 text-base leading-none hover:bg-amber-50"
+                                  onClick={() => openRenameMatterAsset(asset)}
+                                >
+                                  ✏️
+                                </button>
                                 <button
                                   type="button"
                                   title="Delete"
@@ -2992,8 +3311,8 @@ export function QiTrainingRequestsPage() {
   >([]);
   const [orgs, setOrgs] = useState<Array<{ id: string; name: string }>>([]);
   const [tableSearch, setTableSearch] = useState("");
-  const [searchOpen, setSearchOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
+  const filterMenuRef = useRef<HTMLDivElement>(null);
   const [statusFilter, setStatusFilter] = useState<
     "all" | "pending" | "approved" | "rejected" | "scheduled"
   >("all");
@@ -3005,6 +3324,15 @@ export function QiTrainingRequestsPage() {
   >(null);
   const [requestEmployees, setRequestEmployees] = useState<Profile[]>([]);
   const [loadingEmployees, setLoadingEmployees] = useState(false);
+  const [viewingOrg, setViewingOrg] = useState<Organization | null>(null);
+  const [loadingOrg, setLoadingOrg] = useState(false);
+  const [viewingOrgRequester, setViewingOrgRequester] = useState<string | null>(
+    null,
+  );
+  const [confirmDeleteRow, setConfirmDeleteRow] = useState<
+    (TrainingRequest & { programme_title?: string }) | null
+  >(null);
+  const [deleting, setDeleting] = useState(false);
 
   function displayTitle(
     row: TrainingRequest & { programme_title?: string },
@@ -3018,6 +3346,7 @@ export function QiTrainingRequestsPage() {
       supabase
         .from("training_requests")
         .select("*")
+        .eq("hidden_from_qi", false)
         .order("created_at", { ascending: false }),
       supabase.from("organizations").select("id, name, type"),
       supabase.from("training_programmes").select("id, title"),
@@ -3114,6 +3443,27 @@ export function QiTrainingRequestsPage() {
     setOrgFilter("");
   }
 
+  useEffect(() => {
+    if (!filterOpen) return;
+    function onPointerDown(event: MouseEvent) {
+      if (!filterMenuRef.current?.contains(event.target as Node)) {
+        setFilterOpen(false);
+      }
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setFilterOpen(false);
+    }
+    const timer = window.setTimeout(() => {
+      document.addEventListener("mousedown", onPointerDown);
+      document.addEventListener("keydown", onKeyDown);
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [filterOpen]);
+
   async function deleteRequest(
     row: TrainingRequest & { programme_title?: string },
   ) {
@@ -3166,6 +3516,24 @@ export function QiTrainingRequestsPage() {
     await load();
   }
 
+  async function confirmHideFromQi() {
+    if (!confirmDeleteRow) return;
+    setMessage(null);
+    setDeleting(true);
+    const { error } = await supabase
+      .from("training_requests")
+      .update({ hidden_from_qi: true, updated_at: new Date().toISOString() })
+      .eq("id", confirmDeleteRow.id);
+    setDeleting(false);
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+    setConfirmDeleteRow(null);
+    setMessage("Request deleted from your view.");
+    await load();
+  }
+
   async function openEmployees(
     row: TrainingRequest & { programme_title?: string },
   ) {
@@ -3185,6 +3553,22 @@ export function QiTrainingRequestsPage() {
     }
   }
 
+  async function openOrgDetails(orgId: string, requesterName?: string | null) {
+    setViewingOrg(null);
+    setViewingOrgRequester(requesterName?.trim() || null);
+    setLoadingOrg(true);
+    try {
+      const { data } = await supabase
+        .from("organizations")
+        .select("*")
+        .eq("id", orgId)
+        .maybeSingle();
+      setViewingOrg((data as Organization | null) ?? null);
+    } finally {
+      setLoadingOrg(false);
+    }
+  }
+
   const allFilteredSelected =
     filteredRows.length > 0 &&
     filteredRows.every((r) => selectedIds.includes(r.id));
@@ -3200,30 +3584,111 @@ export function QiTrainingRequestsPage() {
         title="Training Requests"
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setSearchOpen((open) => !open)}
-              aria-pressed={searchOpen}
-              className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${
-                searchOpen || tableSearch
-                  ? "border-indigo-300 bg-indigo-50 text-indigo-700"
-                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-              }`}
-            >
-              Search
-            </button>
-            <button
-              type="button"
-              onClick={() => setFilterOpen((open) => !open)}
-              aria-pressed={filterOpen}
-              className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${
-                filterOpen || statusFilter !== "all" || orgFilter
-                  ? "border-indigo-300 bg-indigo-50 text-indigo-700"
-                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-              }`}
-            >
-              Filter
-            </button>
+            <input
+              type="search"
+              value={tableSearch}
+              onChange={(e) => setTableSearch(e.target.value)}
+              placeholder="Search title, code, organization, requester…"
+              aria-label="Search training requests"
+              className="w-full min-w-[220px] rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 sm:w-72"
+            />
+            <div className="relative" ref={filterMenuRef}>
+              <button
+                type="button"
+                onClick={() => setFilterOpen((open) => !open)}
+                aria-expanded={filterOpen}
+                aria-haspopup="menu"
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                  filterOpen || statusFilter !== "all" || orgFilter
+                    ? "border-indigo-300 bg-indigo-50 text-indigo-700"
+                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                Filter
+                <svg
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  className={`h-4 w-4 transition-transform ${
+                    filterOpen ? "rotate-180" : ""
+                  }`}
+                  aria-hidden="true"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </button>
+
+              {filterOpen ? (
+                <div
+                  role="menu"
+                  className="absolute right-0 z-40 mt-2 w-72 space-y-3 rounded-xl border border-slate-200 bg-white p-3 text-left shadow-xl"
+                >
+                  <div>
+                    <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Status
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(
+                        [
+                          { id: "all", label: "All" },
+                          { id: "pending", label: "Pending" },
+                          { id: "approved", label: "Approved" },
+                          { id: "scheduled", label: "Scheduled" },
+                          { id: "rejected", label: "Rejected" },
+                        ] as const
+                      ).map((option) => {
+                        const active = statusFilter === option.id;
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            onClick={() => setStatusFilter(option.id)}
+                            className={`rounded-lg border px-2.5 py-1 text-xs font-semibold transition ${
+                              active
+                                ? "border-indigo-300 bg-indigo-50 text-indigo-700"
+                                : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Organization
+                    <select
+                      value={orgFilter}
+                      onChange={(e) => setOrgFilter(e.target.value)}
+                      aria-label="Filter by organization"
+                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium normal-case text-slate-700"
+                    >
+                      <option value="">All</option>
+                      <option value="__individual__">Individual</option>
+                      {orgs.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  {filtersActive ? (
+                    <button
+                      type="button"
+                      onClick={clearFilters}
+                      className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+                    >
+                      Clear filters
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
           </div>
         }
       />
@@ -3235,83 +3700,6 @@ export function QiTrainingRequestsPage() {
         >
           {message}
         </p>
-      ) : null}
-
-      {searchOpen ? (
-        <div className="mb-3">
-          <input
-            type="search"
-            value={tableSearch}
-            onChange={(e) => setTableSearch(e.target.value)}
-            placeholder="Search title, code, organization, requester…"
-            aria-label="Search training requests"
-            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 sm:max-w-md"
-            autoFocus
-          />
-        </div>
-      ) : null}
-
-      {filterOpen ? (
-        <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200/90 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="mr-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Status
-            </span>
-            {(
-              [
-                { id: "all", label: "All" },
-                { id: "pending", label: "Pending" },
-                { id: "approved", label: "Approved" },
-                { id: "scheduled", label: "Scheduled" },
-                { id: "rejected", label: "Rejected" },
-              ] as const
-            ).map((option) => {
-              const active = statusFilter === option.id;
-              return (
-                <button
-                  key={option.id}
-                  type="button"
-                  onClick={() => setStatusFilter(option.id)}
-                  className={`rounded-lg border px-2.5 py-1 text-xs font-semibold transition ${
-                    active
-                      ? "border-indigo-300 bg-indigo-50 text-indigo-700"
-                      : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Organization
-            <select
-              value={orgFilter}
-              onChange={(e) => setOrgFilter(e.target.value)}
-              aria-label="Filter by organization"
-              className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium normal-case text-slate-700"
-            >
-              <option value="">All</option>
-              <option value="__individual__">Individual</option>
-              {orgs.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {filtersActive ? (
-            <button
-              type="button"
-              onClick={clearFilters}
-              className="ml-auto text-xs font-semibold text-indigo-600 hover:text-indigo-700"
-            >
-              Clear filters
-            </button>
-          ) : null}
-        </div>
       ) : null}
 
       {rows.length === 0 ? (
@@ -3377,17 +3765,16 @@ export function QiTrainingRequestsPage() {
                         {title}
                       </td>
                       <td className="border border-slate-200 px-3 py-2.5 text-center text-slate-700">
-                        {r.org_name ? (
-                          <div>
-                            <p className="font-medium text-slate-900">
-                              {r.org_name}
-                            </p>
-                            {r.requester_name ? (
-                              <p className="mt-0.5 text-xs text-slate-500">
-                                {r.requester_name}
-                              </p>
-                            ) : null}
-                          </div>
+                        {r.org_id ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void openOrgDetails(r.org_id!, r.requester_name)
+                            }
+                            className="rounded-lg border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+                          >
+                            View
+                          </button>
                         ) : (
                           r.requester_name || "—"
                         )}
@@ -3426,9 +3813,13 @@ export function QiTrainingRequestsPage() {
                           }`}
                           value={r.status}
                           aria-label={`Status for ${title}`}
-                          onChange={(e) =>
-                            void setStatus(r.id, e.target.value)
-                          }
+                          onChange={(e) => {
+                            if (e.target.value === "__delete__") {
+                              setConfirmDeleteRow(r);
+                              return;
+                            }
+                            void setStatus(r.id, e.target.value);
+                          }}
                         >
                           <option value="pending">Pending</option>
                           <option value="approved">Approved</option>
@@ -3436,6 +3827,7 @@ export function QiTrainingRequestsPage() {
                           {r.status === "scheduled" ? (
                             <option value="scheduled">Scheduled</option>
                           ) : null}
+                          <option value="__delete__">Delete</option>
                         </select>
                       </td>
                       {isSuperAdmin ? (
@@ -3537,6 +3929,213 @@ export function QiTrainingRequestsPage() {
           </div>
         </div>
       ) : null}
+
+      {viewingOrg || loadingOrg ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="org-details-title"
+        >
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="relative bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 px-5 py-5">
+              <button
+                type="button"
+                className="absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-lg text-2xl leading-none text-white/80 transition hover:bg-white/15 hover:text-white"
+                onClick={() => {
+                  setViewingOrg(null);
+                  setViewingOrgRequester(null);
+                }}
+                title="Close"
+                aria-label="Close"
+              >
+                ×
+              </button>
+              <div className="flex items-center gap-4 pr-10">
+                {viewingOrg?.logo_url ? (
+                  <img
+                    src={viewingOrg.logo_url}
+                    alt={viewingOrg.name}
+                    className="h-14 w-14 shrink-0 rounded-xl border-2 border-white/40 bg-white object-contain p-1"
+                  />
+                ) : (
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-white/20 text-base font-bold text-white ring-2 ring-white/40">
+                    {(viewingOrg?.name || "Org")
+                      .split(/\s+/)
+                      .filter(Boolean)
+                      .map((w) => w[0])
+                      .join("")
+                      .slice(0, 3)
+                      .toUpperCase()}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <h2
+                    id="org-details-title"
+                    className="truncate text-lg font-bold text-white"
+                  >
+                    {viewingOrg?.name || "Organization Details"}
+                  </h2>
+                  <p className="text-xs font-medium uppercase tracking-wide text-indigo-100">
+                    Organization information
+                  </p>
+                  {viewingOrg?.status ? (
+                    <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-white/20 px-2.5 py-0.5 text-[11px] font-semibold capitalize text-white ring-1 ring-white/30">
+                      {viewingOrg.status}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            <div className="max-h-[calc(90vh-104px)] overflow-y-auto p-5">
+              {loadingOrg ? (
+                <p className="py-8 text-center text-sm text-slate-500">
+                  Loading organization…
+                </p>
+              ) : !viewingOrg ? (
+                <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+                  Organization not found.
+                </p>
+              ) : (
+                <div className="space-y-5">
+                  {(
+                    [
+                      {
+                        title: "Contact",
+                        dot: "bg-indigo-500",
+                        fields: [
+                          ["Requested By", viewingOrgRequester],
+                          ["Contact Person", viewingOrg.contact_person_name],
+                          ["Email", viewingOrg.contact_email],
+                          ["Phone", viewingOrg.contact_phone],
+                        ],
+                      },
+                      {
+                        title: "Company",
+                        dot: "bg-emerald-500",
+                        fields: [
+                          ["Industry", viewingOrg.industry],
+                          ["Employee Count", viewingOrg.employee_count],
+                          ["GST Number", viewingOrg.gst_number],
+                          [
+                            "ISO Accreditations",
+                            viewingOrg.iso_accreditations?.length
+                              ? viewingOrg.iso_accreditations.join(", ")
+                              : null,
+                          ],
+                        ],
+                      },
+                      {
+                        title: "Location",
+                        dot: "bg-amber-500",
+                        fields: [
+                          ["Address", viewingOrg.address],
+                          ["City", viewingOrg.city],
+                          ["State", viewingOrg.state],
+                          ["PIN Code", viewingOrg.pin_code],
+                          ["Country", viewingOrg.country],
+                        ],
+                      },
+                      {
+                        title: "Notes",
+                        dot: "bg-slate-400",
+                        fields: [["Notes", viewingOrg.notes]],
+                      },
+                    ] as Array<{
+                      title: string;
+                      dot: string;
+                      fields: Array<[string, string | null | undefined]>;
+                    }>
+                  ).map((section) => (
+                    <div key={section.title}>
+                      <div className="mb-2 flex items-center gap-2">
+                        <span
+                          className={`inline-block h-2 w-2 rounded-full ${section.dot}`}
+                          aria-hidden="true"
+                        />
+                        <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                          {section.title}
+                        </h3>
+                      </div>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {section.fields.map(([label, value]) => (
+                          <div
+                            key={label}
+                            className={`rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 ${
+                              label === "Notes" || label === "Address"
+                                ? "sm:col-span-2"
+                                : ""
+                            }`}
+                          >
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                              {label}
+                            </p>
+                            <p className="mt-0.5 break-words text-sm font-medium text-slate-900">
+                              {value?.toString().trim() || "—"}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {confirmDeleteRow ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-delete-title"
+        >
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+            <div className="mb-3 flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-100 text-lg text-rose-600">
+                🗑️
+              </div>
+              <div>
+                <h2
+                  id="confirm-delete-title"
+                  className="text-lg font-semibold text-slate-900"
+                >
+                  Delete this request?
+                </h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  "{displayTitle(confirmDeleteRow)}" will be removed from your
+                  Training Requests list. The requester
+                  {confirmDeleteRow.org_name
+                    ? ` (${confirmDeleteRow.org_name})`
+                    : ""}{" "}
+                  will still see it in their Request Programme.
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => setConfirmDeleteRow(null)}
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => void confirmHideFromQi()}
+                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {deleting ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -3545,7 +4144,7 @@ export function QiFinancePage() {
   const [rows, setRows] = useState<
     Array<Invoice & { org_name?: string }>
   >([]);
-  const [orgs, setOrgs] = useState<Organization[]>([]);
+  const [orgs, setOrgs] = useState<Array<{ id: string; name: string }>>([]);
   const [form, setForm] = useState({
     invoice_number: "",
     amount: "",
@@ -3553,6 +4152,14 @@ export function QiFinancePage() {
     notes: "",
     status: "draft" as InvoiceStatus,
   });
+  const [tableSearch, setTableSearch] = useState("");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<"all" | InvoiceStatus>(
+    "all",
+  );
+  const [orgFilter, setOrgFilter] = useState("");
+  const filterMenuRef = useRef<HTMLDivElement>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   async function load() {
     const [inv, orgRows] = await Promise.all([
@@ -3562,13 +4169,11 @@ export function QiFinancePage() {
         .order("created_at", { ascending: false }),
       supabase.from("organizations").select("id, name").eq("type", "tenant"),
     ]);
-    const orgMap = new Map(
-      ((orgRows.data ?? []) as Array<{ id: string; name: string }>).map((o) => [
-        o.id,
-        o.name,
-      ]),
-    );
-    setOrgs((orgRows.data ?? []) as Organization[]);
+    const tenantOrgs = (
+      (orgRows.data ?? []) as Array<{ id: string; name: string }>
+    ).map((o) => ({ id: o.id, name: o.name }));
+    const orgMap = new Map(tenantOrgs.map((o) => [o.id, o.name]));
+    setOrgs(tenantOrgs);
     setRows(
       ((inv.data ?? []) as Invoice[]).map((i) => ({
         ...i,
@@ -3580,6 +4185,27 @@ export function QiFinancePage() {
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    if (!filterOpen) return;
+    function onPointerDown(event: MouseEvent) {
+      if (!filterMenuRef.current?.contains(event.target as Node)) {
+        setFilterOpen(false);
+      }
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setFilterOpen(false);
+    }
+    const timer = window.setTimeout(() => {
+      document.addEventListener("mousedown", onPointerDown);
+      document.addEventListener("keydown", onKeyDown);
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [filterOpen]);
 
   async function createInvoice() {
     if (!form.invoice_number.trim()) return;
@@ -3599,6 +4225,7 @@ export function QiFinancePage() {
       notes: "",
       status: "draft",
     });
+    setShowCreateModal(false);
     await load();
   }
 
@@ -3611,116 +4238,345 @@ export function QiFinancePage() {
     .filter((r) => r.status === "paid")
     .reduce((s, r) => s + r.amount_cents, 0);
 
+  const filtersActive =
+    tableSearch.trim() !== "" || statusFilter !== "all" || orgFilter !== "";
+
+  function clearFilters() {
+    setTableSearch("");
+    setStatusFilter("all");
+    setOrgFilter("");
+  }
+
+  const filteredRows = useMemo(() => {
+    const q = tableSearch.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (statusFilter !== "all" && r.status !== statusFilter) return false;
+      if (orgFilter) {
+        if (orgFilter === "__none__") {
+          if (r.org_id) return false;
+        } else if (r.org_id !== orgFilter) {
+          return false;
+        }
+      }
+      if (!q) return true;
+      const hay = [
+        r.invoice_number,
+        r.org_name,
+        r.notes,
+        r.status,
+        inr(r.amount_cents),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [rows, tableSearch, statusFilter, orgFilter]);
+
+  function statusPillClass(status: string) {
+    if (status === "paid") return "border-emerald-300 bg-emerald-50 text-emerald-800";
+    if (status === "sent") return "border-amber-300 bg-amber-50 text-amber-800";
+    if (status === "void") return "border-rose-300 bg-rose-50 text-rose-800";
+    return "border-slate-300 bg-slate-50 text-slate-700";
+  }
+
   return (
     <div>
       <PageHeader
         title="Finance Management"
-        description="Invoices for training engagements with organizations and individuals."
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="search"
+              value={tableSearch}
+              onChange={(e) => setTableSearch(e.target.value)}
+              placeholder="Search number, organization, notes…"
+              aria-label="Search invoices"
+              className="w-full min-w-[220px] rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 sm:w-72"
+            />
+            <div className="relative" ref={filterMenuRef}>
+              <button
+                type="button"
+                onClick={() => setFilterOpen((open) => !open)}
+                aria-expanded={filterOpen}
+                aria-haspopup="menu"
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                  filterOpen || statusFilter !== "all" || orgFilter
+                    ? "border-indigo-300 bg-indigo-50 text-indigo-700"
+                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                Filter
+                <svg
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  className={`h-4 w-4 transition-transform ${
+                    filterOpen ? "rotate-180" : ""
+                  }`}
+                  aria-hidden="true"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </button>
+
+              {filterOpen ? (
+                <div
+                  role="menu"
+                  className="absolute right-0 z-40 mt-2 w-72 space-y-3 rounded-xl border border-slate-200 bg-white p-3 text-left shadow-xl"
+                >
+                  <div>
+                    <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Status
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(
+                        [
+                          { id: "all", label: "All" },
+                          { id: "draft", label: "Draft" },
+                          { id: "sent", label: "Sent" },
+                          { id: "paid", label: "Paid" },
+                          { id: "void", label: "Void" },
+                        ] as const
+                      ).map((option) => {
+                        const active = statusFilter === option.id;
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            onClick={() => setStatusFilter(option.id)}
+                            className={`rounded-lg border px-2.5 py-1 text-xs font-semibold transition ${
+                              active
+                                ? "border-indigo-300 bg-indigo-50 text-indigo-700"
+                                : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Organization
+                    <select
+                      value={orgFilter}
+                      onChange={(e) => setOrgFilter(e.target.value)}
+                      aria-label="Filter by organization"
+                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium normal-case text-slate-700"
+                    >
+                      <option value="">All</option>
+                      <option value="__none__">No organization</option>
+                      {orgs.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  {filtersActive ? (
+                    <button
+                      type="button"
+                      onClick={clearFilters}
+                      className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+                    >
+                      Clear filters
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowCreateModal(true)}
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+            >
+              Create Invoice
+            </button>
+          </div>
+        }
       />
-      <Panel className="mb-4">
-        <p className="text-sm text-slate-600">
-          Paid revenue:{" "}
-          <strong className="text-slate-900">{inr(totalPaid)}</strong>
-        </p>
-      </Panel>
-      <Panel className="mb-4 grid gap-2 sm:grid-cols-2">
-        <input
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          placeholder="Invoice number"
-          value={form.invoice_number}
-          onChange={(e) =>
-            setForm((f) => ({ ...f, invoice_number: e.target.value }))
-          }
+      <div className="mb-4 grid gap-3 sm:grid-cols-3">
+        <StatCard label="Paid revenue" value={inr(totalPaid)} />
+        <StatCard label="Total invoices" value={rows.length} />
+        <StatCard
+          label="Pending / sent"
+          value={rows.filter((r) => r.status === "sent").length}
         />
-        <input
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          placeholder="Amount (INR)"
-          value={form.amount}
-          onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
-        />
-        <select
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          value={form.org_id}
-          onChange={(e) => setForm((f) => ({ ...f, org_id: e.target.value }))}
-        >
-          <option value="">Organization (optional)</option>
-          {orgs.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.name}
-            </option>
-          ))}
-        </select>
-        <select
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          value={form.status}
-          onChange={(e) =>
-            setForm((f) => ({
-              ...f,
-              status: e.target.value as InvoiceStatus,
-            }))
-          }
-        >
-          <option value="draft">Draft</option>
-          <option value="sent">Sent</option>
-          <option value="paid">Paid</option>
-        </select>
-        <input
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm sm:col-span-2"
-          placeholder="Notes"
-          value={form.notes}
-          onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-        />
-        <button
-          type="button"
-          onClick={() => void createInvoice()}
-          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white sm:w-fit"
-        >
-          Create invoice
-        </button>
-      </Panel>
+      </div>
+
       {rows.length === 0 ? (
         <EmptyState message="No invoices yet." />
+      ) : filteredRows.length === 0 ? (
+        <EmptyState message="No invoices match your search or filters." />
       ) : (
-        <Panel>
-          <table className="w-full text-left text-sm">
-            <thead className="text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="pb-2">Number</th>
-                <th className="pb-2">Organization</th>
-                <th className="pb-2">Amount</th>
-                <th className="pb-2">Status</th>
-                <th className="pb-2">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((inv) => (
-                <tr key={inv.id} className="border-t border-slate-100">
-                  <td className="py-2 font-medium">{inv.invoice_number}</td>
-                  <td className="py-2">{inv.org_name ?? "—"}</td>
-                  <td className="py-2">{inr(inv.amount_cents)}</td>
-                  <td className="py-2 capitalize">{inv.status}</td>
-                  <td className="py-2">
-                    <div className="flex flex-wrap gap-1">
-                      {(["draft", "sent", "paid", "void"] as InvoiceStatus[]).map(
-                        (st) => (
-                          <button
-                            key={st}
-                            type="button"
-                            onClick={() => void setStatus(inv.id, st)}
-                            className="rounded border border-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase"
-                          >
-                            {st}
-                          </button>
-                        ),
-                      )}
-                    </div>
-                  </td>
+        <Panel className="!p-0 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="border border-slate-200 px-3 py-2.5 text-left">
+                    Number
+                  </th>
+                  <th className="border border-slate-200 px-3 py-2.5 text-left">
+                    Organization
+                  </th>
+                  <th className="border border-slate-200 px-3 py-2.5 text-center">
+                    Amount
+                  </th>
+                  <th className="border border-slate-200 px-3 py-2.5 text-center">
+                    Status
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filteredRows.map((inv) => (
+                  <tr key={inv.id} className="hover:bg-slate-50/80">
+                    <td className="border border-slate-200 px-3 py-2.5 text-left font-medium text-slate-900">
+                      {inv.invoice_number}
+                    </td>
+                    <td className="border border-slate-200 px-3 py-2.5 text-left text-slate-700">
+                      {inv.org_name ?? "—"}
+                    </td>
+                    <td className="border border-slate-200 px-3 py-2.5 text-center font-semibold text-slate-900">
+                      {inr(inv.amount_cents)}
+                    </td>
+                    <td className="border border-slate-200 px-3 py-2.5 text-center">
+                      <select
+                        value={inv.status}
+                        aria-label={`Status for ${inv.invoice_number}`}
+                        onChange={(e) =>
+                          void setStatus(inv.id, e.target.value as InvoiceStatus)
+                        }
+                        className={`rounded-lg border px-2 py-1.5 text-xs font-semibold capitalize ${statusPillClass(
+                          inv.status,
+                        )}`}
+                      >
+                        <option value="draft">Draft</option>
+                        <option value="sent">Sent</option>
+                        <option value="paid">Paid</option>
+                        <option value="void">Void</option>
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Panel>
       )}
+
+      {showCreateModal ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="create-invoice-title"
+        >
+          <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h2
+                  id="create-invoice-title"
+                  className="text-lg font-semibold text-slate-900"
+                >
+                  Create Invoice
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Raise an invoice for a training engagement.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-2xl leading-none text-slate-500 hover:bg-slate-100"
+                onClick={() => setShowCreateModal(false)}
+                title="Close"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-2">
+              <input
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                placeholder="Invoice number"
+                value={form.invoice_number}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, invoice_number: e.target.value }))
+                }
+              />
+              <input
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                placeholder="Amount (INR)"
+                value={form.amount}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, amount: e.target.value }))
+                }
+              />
+              <select
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                value={form.org_id}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, org_id: e.target.value }))
+                }
+              >
+                <option value="">Organization (optional)</option>
+                {orgs.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                value={form.status}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    status: e.target.value as InvoiceStatus,
+                  }))
+                }
+              >
+                <option value="draft">Draft</option>
+                <option value="sent">Sent</option>
+                <option value="paid">Paid</option>
+              </select>
+              <input
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm sm:col-span-2"
+                placeholder="Notes"
+                value={form.notes}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, notes: e.target.value }))
+                }
+              />
+            </div>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(false)}
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!form.invoice_number.trim()}
+                onClick={() => void createInvoice()}
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Create Invoice
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
